@@ -93,12 +93,7 @@ def build(model):
     BUILD.mkdir(parents=True, exist_ok=True)
     glslang = ROOT / "toolchain" / "glslang" / "bin" / "glslang"
     if not glslang.exists():
-        found = shutil.which("glslang")
-        if not found:
-            sys.exit("no glslang: run fetch_deps.sh, or put glslang on PATH")
-        glslang.parent.mkdir(parents=True, exist_ok=True)
-        glslang.symlink_to(found)
-        print(f"toolchain/glslang/bin/glslang -> {found} (fetch_deps.sh pins 16.5.0; this one may differ)")
+        sys.exit("no pinned glslang: run bash fetch_deps.sh")
     run([sys.executable, "linux/build/build_network.py", "rdna3"])
     defines = host_defines()
     inc = ["-Ilinux/src/core", "-Ilinux/test"]
@@ -117,7 +112,7 @@ def build(model):
     shutil.rmtree(inst, ignore_errors=True)
     inst.mkdir(parents=True)
     shutil.copytree(ROOT / "build" / "linux" / "rdna3" / "network", inst / "shaders")
-    shutil.copyfile(model, inst / "dlssnr.bin")
+    shutil.copyfile(model, inst / "CC_SILVER_AARDWOLD.bin")
 
 
 # ---- the checks ----------------------------------------------------------------------------------

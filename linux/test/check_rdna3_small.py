@@ -50,7 +50,7 @@ def build(model):
     shutil.rmtree(INST, ignore_errors=True)
     data.mkdir(parents=True)
     shutil.copytree(ROOT / "build" / "linux" / "rdna3" / "network", data / "shaders")
-    shutil.copyfile(model, data / "dlssnr-small.bin")
+    shutil.copyfile(model, data / "CC_SMALL_FP8.bin")
 
 
 def run_frame(name, in_path, out_path, timed=0):

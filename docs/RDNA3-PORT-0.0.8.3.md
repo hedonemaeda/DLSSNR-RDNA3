@@ -69,3 +69,33 @@ be appended as the port progresses. GPU timing and game compatibility remain unv
 - `check_paths.sh`, `check_imgui.sh`, generated INIs and the CPU descriptor regression
   pass. Native runtime and MinGW runtime translation units compile with the RDNA3 defines.
 - Full GPU checks were not run: this worker has no gfx11 GPU or model weights.
+
+## Stage 2 implementation
+
+- Imported the Linux target's complete 0.0.8.3 changes, including model filenames,
+  fitted deltas, optimized calibration, diagnostics, Memory Guard and FG fixes.
+- Added gfx11 experimental and optimized overlays with their actual shader paths:
+  ReLU, fixed probability tables, merged V/output projection, certified constant
+  C512 heads, H8-rotated Swin INT4 input and four-bank ViT INT4 scheduling.
+- Fixed probability operands use the same upper-lane key-pair permutation as V.
+  INT4 four-bank and constant-head paths retain gfx11's two record slots and
+  `NR_I4_MMA2` marked pairs. No unmarked INT4 WMMA was introduced.
+- All new overlays compiled with pinned glslang: experimental 53, Quality 56,
+  Balanced 68, Performance 70, Ultra Performance 70 pipelines (plus 8 temporal each).
+- The old INT4 network is replaced in installations, deliberately, as upstream does.
+  Its old name and `--int4` migrate to optimized. Its tables and overlay are retained
+  only for `check_rdna3_int4.py` with a test-only runtime define and
+  `NR_INT4_LEGACY=1`; its golden is not used for optimized. Baseline goldens unchanged.
+- Windows implementation files remain unchanged. Target hash-addressed ACO records
+  and new template aliases are added (old records retained) solely because Linux
+  RDNA4 SPIR-V changed in the upstream port and the repository requires matching
+  Windows ACO records. These are upstream machine code, not NVIDIA files.
+
+## Target machine and reported regressions
+
+Owner supplied: Z1 Extreme (RDNA3 APU), Dragon's Dogma 2, DX12 through Proton,
+Mesa 26.2.5, Proton CachyOS Latest (exact build still needs recording in the test log).
+Old build: green output and severe slowdown after changing network resolution,
+display resolution or SR level; restart recovered the resize cases. A second pass
+produced green output and slowdown even after restart. Menu flickered with FG.
+These are priority acceptance scenarios; no fix is claimed proven on this machine.
