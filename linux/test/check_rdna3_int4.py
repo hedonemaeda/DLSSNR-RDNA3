@@ -42,7 +42,7 @@ def build(model):
     r = subprocess.run(["bash", "linux/build/build_int4.sh", str(INT4)], cwd=ROOT, capture_output=True, text=True, env=env)
     if r.returncode:
         sys.exit(f"build_int4.sh failed:\n{r.stdout}{r.stderr}")
-    cxx = ["g++", "-std=c++20", "-O1", "-w", "-DNR_INT4=1", "-DNR_TEST_LEGACY_INT4=1", "-Ilinux/src/core", "-Ilinux/test"] + host_defines()
+    cxx = ["g++", "-std=c++20", "-O1", "-w", "-DNR_INT4=1", "-DNR_TEST_LEGACY_INT4=1", "-Itoolchain/Vulkan-Headers/include", "-Ilinux/src/core", "-Ilinux/test"] + host_defines()
     run(cxx + ["linux/test/run_frame.cpp", "linux/src/core/nr_runtime.cpp", "linux/src/core/nr_native_plan.cpp",
                "-o", str(BUILD / "run_frame_int4"), "-lvulkan", "-lpthread"])
     run(cxx + ["linux/src/core/nr_graph.cpp", "-o", str(BUILD / "nr_graph_int4"), "-lvulkan"])

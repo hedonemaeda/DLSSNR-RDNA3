@@ -4,6 +4,11 @@
 > [README-RDNA3.md](README-RDNA3.md). The rest of this file describes the upstream project
 > ([mochizuki0323/DLSSNR-AMD](https://github.com/mochizuki0323/DLSSNR-AMD)) for RDNA4 (RX 9000).
 
+This fork's Linux port targets upstream 0.0.8.3; see the [port report](docs/RDNA3-PORT-0.0.8.3.md)
+and [Z1 Extreme trial instructions](docs/RDNA3-TARGET-TESTING.md). GPU qualification is pending.
+The Windows runtime is kept at its pre-port behavior, with its matching ACO shader source pinned;
+the upstream Windows features described below are not all implemented in this fork.
+
 Runs the neural rendering (NR) model of NVIDIA DLSS 5 in games on AMD Radeon RX 9000 (RDNA4)
 graphics cards.
 

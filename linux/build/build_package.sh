@@ -377,6 +377,8 @@ mkdir -p -- "$pkg/optimized"
 cp -- linux/data/optimized/dlssnr-optimized.delta linux/build/experimental_weights.py "$pkg/optimized/"
 cp -- linux/data/optimized/dlssnr-optimized.sha256 "$pkg/optimized/CC_SILVER_AARDWOLD_OPTIMIZED.bin.sha256"
 cp -- linux/package/install.sh linux/package/README.txt linux/package/lumenite.py "$pkg/"
+cp -- LICENSE "$pkg/DLSSNR-AMD-LICENSE.txt"
+[[ "$gpu" != rdna3 ]] || cp -- docs/RDNA3-TARGET-TESTING.md "$pkg/"
 chmod +x "$pkg/install.sh" "$mt/extract_model.sh"
 
 # NR_SIGN=1: every Windows binary without a signature of its own signed with a self-signed certificate made for this

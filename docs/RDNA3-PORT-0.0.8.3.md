@@ -94,7 +94,7 @@ be appended as the port progresses. GPU timing and game compatibility remain unv
 ## Target machine and reported regressions
 
 Owner supplied: Z1 Extreme (RDNA3 APU), Dragon's Dogma 2, DX12 through Proton,
-Mesa 26.2.5, Proton CachyOS Latest (exact build still needs recording in the test log).
+Mesa 26.2.5, Proton CachyOS Latest, OptiScaler route (exact Proton/game builds still need recording in the test log).
 Old build: green output and severe slowdown after changing network resolution,
 display resolution or SR level; restart recovered the resize cases. A second pass
 produced green output and slowdown even after restart. Menu flickered with FG.
@@ -147,3 +147,62 @@ ephemeral certificate and is outside the reproducible-build comparison.
   Linux SPIR-V would be incorrect. This narrow packaging fix preserves the old
   Windows network; it does not port Windows runtime features or enable the new
   networks there. The normal Linux build continues using the new sources.
+
+## Final acceptance status
+
+| Area | Implemented | Actual qualification | Remaining target work |
+| --- | --- | --- | --- |
+| UI, hotkeys, localization, Unicode, Layers | Yes, complete Linux target sources | Host/add-on builds; INIs and guards | Live UI/hotkeys/font/Unicode install |
+| FG, queued resize/dynamic resolution, menu locking, compute blits | Yes | Host/shader builds | DD2 FG provider(s), menu/resize, once-per-game-frame |
+| History Precision, Memory Guard, VRAM reuse/lazy allocations | Yes; twins and raw aliases adapted | CPU descriptor regression; compilation | EXACT baseline frames, temporal transitions, UMA memory pressure |
+| Small and Silver | Preserved | Baseline shader byte comparison; no golden changes | Existing EXACT GPU checks |
+| Experimental | Implemented gfx11 computations | All 53 + 8 temporal pipelines compile/reproduce | Model hash, independent numerical reference and held-out clips |
+| Optimized Quality | Implemented gfx11 computations | All 56 + 8 temporal pipelines compile/reproduce | Same, with constant-head equivalence |
+| Optimized Balanced | Implemented gfx11 computations and new calibration path | 68 + 8 compile/reproduce; paired integer WMMA | Model hash, actual ISA rewrite, independent numerical reference |
+| Optimized Performance | Implemented fixed-attention routes | 70 + 8 compile/reproduce; paired integer WMMA | Same plus pre/encoder route numerical checks |
+| Optimized Ultra Performance | Implemented QKV/decoder/ViT INT4 paths and ultra tables | 70 + 8 compile/reproduce; paired integer WMMA | Same with ultra model/table coverage |
+| Legacy INT4 | Retained only in regression harness; installations migrate deliberately | 65 + 8 compile, old tables/goldens isolated | Existing EXACT legacy GPU check |
+| Model migration and installation | Named models; verified original/small reuse; new derived weights rebuilt | Script/config and package checks | Full extraction/installation with owner's 310.9.16 DLL |
+| RDNA4 | Target Linux shader sources retained | All six variants compile; ACO hashes covered | GPU regression checks |
+| Windows | Runtime unchanged; old ACO source selection preserved | Pinned default/legacy INT4 compile; all hashes covered | Full Windows package/game validation outside this Linux port |
+
+No requested Linux mode is absent from the implementation. All modes remain
+GPU-unverified. In particular there is no claim that the Z1 Extreme's reported
+green output, second-pass slowdown or FG menu flicker is fixed until the target
+acceptance matrix passes. Full NVIDIA extraction, derived-model SHA checks,
+GPU goldens, actual gfx11 machine-code rewrite, quality, VRAM, timing and game
+compatibility were not testable without the owner's DLL/models and target GPU.
+All new-mode numerical references/goldens remain unapproved; existing tests were
+not relaxed. The worker has no `/dev/dri` device node. No software Vulkan run is
+being counted as a GPU test.
+
+## Delivered artifact and actual build record
+
+- Built implementation/source revision: `397bb23` (`0.0.8.3-64-g397bb23`).
+- Branch: `port/rdna3-0.0.8.3` in the owner's writable origin.
+- Worktree retained: `/home/gedomada/projects/dlssnr-rdna3-port-0.0.8.3`.
+- Package: `linux/package/DLSSNR-AMD-Vulkan-Linux-0.0.8.3-64-g397bb23-x86_64-rdna3.tar.gz`.
+- Size: 259,142,989 bytes; 1,133 files; unpacked staging directory about 454 MiB.
+- SHA-256: `918c924fcd431f316b25107373d3cca9272b6d41e0d7baa20988bb50f6f11825`.
+- Build logs: `build/port-logs/` (especially `package-final.log`, `package-resume.log`,
+  `package-finish.log`, `native-final.log`, `shader-reproducibility.txt`,
+  `static-shaders-final.txt` and `aco-coverage-final.txt`).
+- Entry command: `NR_GPU=rdna3 NR_ARCH=x86_64 bash linux/build/build_package.sh`.
+  Project-local 7z launcher/codec resolution interrupted the first packaging
+  attempts; after correcting the launcher, packaging resumed from unchanged
+  already-built runtime objects in this worktree. All components and the final
+  archive were built. The temporary continuation script also needed its model-tools
+  path set before final archival; it is generated scratch, not part of the recipe.
+  Runtime/shader sources at `67c7700` and `397bb23` are identical; intervening
+  changes concern packaging, checks and documentation.
+- GPU, extraction/model SHA and game tests were not run. A second independent
+  full host/package rebuild was not run; all six shader families were independently
+  rebuilt byte for byte, and package metadata/repacking were checked separately.
+
+Later report/test-path-only commits do not change the implementation of the
+runtime in this artifact. Install, rollback, target commands, references and logs:
+[RDNA3-TARGET-TESTING.md](RDNA3-TARGET-TESTING.md).
+
+The final recipe also ships the project MIT license and the target trial checklist
+inside the RDNA3 package. The artifact recorded above precedes that packaging-only
+addition; a full recipe rebuild and updated delivery record follow below.

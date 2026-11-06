@@ -96,7 +96,7 @@ def build(model):
         sys.exit("no pinned glslang: run bash fetch_deps.sh")
     run([sys.executable, "linux/build/build_network.py", "rdna3"])
     defines = host_defines()
-    inc = ["-Ilinux/src/core", "-Ilinux/test"]
+    inc = ["-Itoolchain/Vulkan-Headers/include", "-Ilinux/src/core", "-Ilinux/test"]
     cxx = ["g++", "-std=c++20", "-O1", "-w"] + inc + defines
     run(cxx + ["linux/test/run_frame.cpp", "linux/src/core/nr_runtime.cpp", "linux/src/core/nr_native_plan.cpp",
                "-o", str(BUILD / "run_frame"), "-lvulkan", "-lpthread"])

@@ -37,6 +37,7 @@ def main():
     a.out.mkdir(parents=True, exist_ok=True)
     runner = a.runner or base.BUILD / 'run_frame_variants'
     if not a.runner:
+        base.BUILD.mkdir(parents=True, exist_ok=True)
         base.run(['g++', '-std=c++20', '-O1', '-w', '-DNR_INT4=1', '-Itoolchain/Vulkan-Headers/include',
                   '-Ilinux/src/core', '-Ilinux/test'] + base.host_defines() +
                  ['linux/test/run_frame.cpp', 'linux/src/core/nr_runtime.cpp', 'linux/src/core/nr_native_plan.cpp',

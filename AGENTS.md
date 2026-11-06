@@ -23,8 +23,9 @@ Notes for contributors and coding assistants. README.md covers what the project 
   where the original uses FP8, FP16/FP32 elsewhere. No new lower-precision boundary, no truncated
   inputs or lookup tables. Changing the order of a reduction changes the picture too - it is not a free
   reordering.
-  The optional int4 mixed network (`NR_INT4=1`, `linux/shaders/rdna4/pipelines-int4.json`) is the one
-  exception: it trades precision for speed by design and is installed only when asked for.
+  The optional optimized networks' INT4 layers (`NR_INT4=1`, the `pipelines-int4.json`,
+  `pipelines-performance.json` and `pipelines-ultra.json` overlays) and fitted experimental networks
+  intentionally change the network. They require their own references, never the baseline golden.
 - **RenoDX's shaders stay RenoDX's.** `linux/shaders/renodx/` is RenoDX's code under its MIT licence; changes
   there are speed changes that leave every output bit as it was, each listed in the README in that folder.
 - **Windows ACO Mode has a record for every network SPIR-V.** ACO Mode (the Windows default) runs the Linux
@@ -52,13 +53,13 @@ Notes for contributors and coding assistants. README.md covers what the project 
   commit. Time kernels with the GPU idle.
 - A raw 32-bit view of an arena (counters, sync words, scale tables) goes at alias binding 16 plus the arena's
   binding, never next to an e4m3 view: the e4m3 bindings read the FP16 twin buffer. The int4 data's views are such.
-- int4 mixed on RDNA3 (`pipelines-int4.json`, `NR_INT4=1` on the host): run `python3 linux/test/check_rdna3_int4.py
-  --model dlssnr.bin` before and after any change to it, as above; its picture is not the default network's and has
+- Legacy int4 mixed on RDNA3 (`pipelines-int4-legacy.json`, `NR_INT4_LEGACY=1` in its test build): run `python3 linux/test/check_rdna3_int4.py
+  --model CC_SILVER_AARDWOLD.bin` before and after any change to it, as above; its picture is not the default network's and has
   its own golden. Every int8 fragment in those kernels is multiplied twice with `NR_I4_MMA2` (the second marked
   saturating): the host rewrite turns the pair into the two halves of the fragment and refuses a pipeline whose
   WMMAs are not in marked pairs, so a WMMA added outside `NR_I4_MMA2` fails the build of that pipeline.
-- The small model (`dlssnr-small.bin`, `[Network] Model`): run `python3 linux/test/check_rdna3_small.py --model
-  dlssnr-small.bin` as above for a change that reaches it; a change to `nr_graph.cpp` or the planner also needs
+- The small model (`CC_SMALL_FP8.bin`, formerly `dlssnr-small.bin`, `[Network] Model`): run `python3 linux/test/check_rdna3_small.py --model
+  CC_SMALL_FP8.bin` as above for a change that reaches it; a change to `nr_graph.cpp` or the planner also needs
   `check_rdna3.py` to stay EXACT.
 
 ## Performance work on RDNA4 (RADV / ACO)
@@ -140,8 +141,10 @@ Measured facts worth knowing before changing kernels:
 - Model weights and NVIDIA DLLs stay outside Git and distributed packages. Check package contents before
   sharing artifacts. Keep upstream license and attribution files.
 - homeserver's Fusion worker reports no GPU. Do not claim GPU tests, frame timings or game compatibility
-  from a successful build or software Vulkan execution. The owner reported an existing working-but-buggy
-  build under Proton; the exact GPU, game, Mesa/Proton versions and bugs remain unknown.
+  from a successful build or software Vulkan execution. The owner reported Z1 Extreme, Dragon's Dogma 2,
+  DX12/OptiScaler under Proton CachyOS Latest and Mesa 26.2.5: green output and slowdown after resolution/SR
+  changes and with a second pass, plus FG menu flicker. Exact Proton/game builds and GPU qualification remain pending.
+  The port and target checklists are in `docs/RDNA3-PORT-0.0.8.3.md` and `docs/RDNA3-TARGET-TESTING.md`.
 - Missing target hardware does not block source work, shader compilation, packaging and CPU/static checks.
   Record GPU-dependent checks as unrun and provide exact commands and required inputs for the target machine.
 - Report the implemented features, actual checks, artifact locations and remaining limitations precisely.

@@ -40,7 +40,7 @@ def build(model):
         sys.exit(f"{model} is not the tested small model (SHA-256 {digest}, want {MODEL_SHA256}): make it with "
                  "extract_model.sh <nvngx_dlssnr.dll 310.9.16> <folder>")
     run([sys.executable, "linux/build/build_network.py", "rdna3"])
-    cxx = ["g++", "-std=c++20", "-O1", "-w", "-Ilinux/src/core", "-Ilinux/test"] + host_defines()
+    cxx = ["g++", "-std=c++20", "-O1", "-w", "-Itoolchain/Vulkan-Headers/include", "-Ilinux/src/core", "-Ilinux/test"] + host_defines()
     run(cxx + ["linux/test/run_frame.cpp", "linux/src/core/nr_runtime.cpp", "linux/src/core/nr_native_plan.cpp",
                "-o", str(BUILD / "run_frame_small"), "-lvulkan", "-lpthread"])
     run(cxx + ["linux/src/core/nr_graph.cpp", "-o", str(BUILD / "nr_graph_small"), "-lvulkan"])
