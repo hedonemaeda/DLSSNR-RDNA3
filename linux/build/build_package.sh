@@ -27,6 +27,7 @@ set -euo pipefail
 model=${NR_MODEL:+$(realpath -- "$NR_MODEL")}
 small=${NR_MODEL_SMALL:+$(realpath -- "$NR_MODEL_SMALL")}
 cd -- "$(dirname -- "$0")/../.."
+source linux/build/reproducible.sh
 bash linux/build/check_paths.sh   # UTF-8 paths only in the Windows code (a game folder with any letters)
 bash linux/build/check_imgui.sh   # ReShade's ImGui is MSVC's: no ImVec2-returning call from the add-on's code
 arch=${NR_ARCH:-x86_64}
@@ -81,7 +82,7 @@ ldflags=(-ld3d12 -ldxgi -ldwmapi -lgdi32 -lole32 -static -static-libgcc -static-
 # whatever a trial link reports as undefined, so it cannot go stale.
 runtime_objs=("$out/session.o" "$out/config.o" "$out/screenshot.o" "$out/interop.o" "$out/vram_ledger.o" "$out/log.o" "$out/vkdevice.o"
               "$out/nr_runtime.o" "$out/nr_native_plan.o" "$out/nr_renodx.o" "$out/nr_wilsjo2.o")
-undefined=$({ "$cxx" -shared -o /dev/null "$out/reshade_addon.o" "${runtime_objs[@]}" \
+undefined=$({ "$cxx" -Wl,--no-insert-timestamp -shared -o /dev/null "$out/reshade_addon.o" "${runtime_objs[@]}" \
     "$out"/mh_*.o "${ldflags[@]}" 2>&1 || true; } |
     grep -o "undefined reference to \`_*vk[A-Za-z0-9_@]*'" | sed "s/.*\`//; s/'//" | sort -u)
 plain() { echo "$1" | sed 's/^_//; s/@[0-9]*$//'; }
@@ -213,7 +214,7 @@ echo "vulkan entry points resolved at run time: $(echo "$undefined" | grep -c .)
 lazy=("$out/vulkan_lazy_s.o" "$out/vulkan_lazy_c.o")
 
 # ---- link ---------------------------------------------------------------------
-"$cxx" -shared -o "$out/dlssnr_amd.addon$bits" "$out/reshade_addon.o" "${runtime_objs[@]}" \
+"$cxx" -Wl,--no-insert-timestamp -shared -o "$out/dlssnr_amd.addon$bits" "$out/reshade_addon.o" "${runtime_objs[@]}" \
     "${lazy[@]}" "$out"/mh_*.o "${ldflags[@]}"
 [[ -n "${NR_PROGRAMS_ONLY:-}" ]] && exit 0
 
@@ -338,7 +339,7 @@ if [[ "$arch" == x86_64 ]]; then
         { echo "the plugin's wilsjo2 shaders are not dlssnr-amd/shaders/wilsjo2's" >&2; exit 1; }
     cp -- linux/package/optiscaler/patch_ini.py "$pkg/optiscaler/"
     # vulkan-1.dll for the game folder, its exports forwarded to winevulkan.dll (linux/vulkan-loader/vulkan1_forwarder.c)
-    "$cc" -shared -o "$pkg/optiscaler/vulkan-1.dll" linux/vulkan-loader/vulkan1_forwarder.c \
+    "$cc" -Wl,--no-insert-timestamp -shared -o "$pkg/optiscaler/vulkan-1.dll" linux/vulkan-loader/vulkan1_forwarder.c \
         linux/vulkan-loader/vulkan1_forwarder.def
 fi
 
@@ -385,7 +386,8 @@ chmod +x "$pkg/install.sh" "$mt/extract_model.sh"
 # ---- archive ------------------------------------------------------------------
 version=$(bash linux/build/version.sh)
 archive="DLSSNR-AMD-Vulkan-Linux-$version-$arch$([[ "$gpu" == rdna4 ]] || echo "-$gpu").tar.gz"
-tar -C "$pkg" -czf "$out/$archive" .
+tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner -C "$pkg" -cf - . |
+    gzip -n > "$out/$archive"
 # The finished package goes beside the installer sources in linux/package/ (not in git).
 mv -f -- "$out/$archive" "linux/package/$archive"   # one copy only; package-build/ is scratch
 du -sh -- "$pkg"

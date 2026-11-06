@@ -99,3 +99,24 @@ Old build: green output and severe slowdown after changing network resolution,
 display resolution or SR level; restart recovered the resize cases. A second pass
 produced green output and slowdown even after restart. Menu flickered with FG.
 These are priority acceptance scenarios; no fix is claimed proven on this machine.
+
+## Reproducing the build
+
+Ubuntu 24.04 x86_64 with a native C/C++ compiler, git, curl, Python 3 and the
+Vulkan loader. No system packages were installed for this port. The optional
+bootstrap extracts SHA-256-pinned Ubuntu packages into this worktree only:
+
+```sh
+bash linux/build/bootstrap_ubuntu_tools.sh
+source build/local-tools.env
+bash fetch_deps.sh
+NR_ARCH=x86_64 bash linux/build/build_vulkan_loader.sh
+NR_GPU=rdna3 NR_ARCH=x86_64 bash linux/build/build_package.sh
+```
+
+All downloads, tools and outputs are private to this worktree. If an exact
+Ubuntu package version is no longer in the configured apt archive, use an archive
+holding the listed version; do not silently substitute another checksum.
+`SOURCE_DATE_EPOCH` defaults to the source commit's timestamp, PE link timestamps
+are zeroed and the final tar/gzip metadata is normalized. `NR_SIGN=1` uses an
+ephemeral certificate and is outside the reproducible-build comparison.

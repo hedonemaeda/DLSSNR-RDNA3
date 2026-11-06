@@ -14,6 +14,21 @@ without warranty.
 - The package also carries the optional [int4 mixed](#int4-mixed-optional) network: 7 to 8 % less time a
   frame for 3.5 to 5.4 dB less against NVIDIA's output. The installer asks; the default is the network above.
 
+## Port to 0.0.8.3
+
+The Linux runtime, menus and model installation have been ported to the pinned
+upstream 0.0.8.3, including experimental and all four optimized levels on gfx11.
+This port is a build-tested candidate: GPU numerical and game checks are still
+required. The measurements below describe the original fork on an RX 7900 XTX;
+they are not measurements of this port or of the Z1 Extreme.
+
+See [the port and acceptance report](docs/RDNA3-PORT-0.0.8.3.md) for exact commits,
+build commands, checks, target-machine tests and rollback. Models now use their
+network names (`CC_SMALL_FP8.bin`, `CC_SILVER_AARDWOLD.bin`, etc.). The installer
+migrates checksum-verified legacy source models and rebuilds the fitted networks.
+The old INT4 network is deliberately replaced by optimized in installations; its
+old tables and goldens are isolated for the legacy regression harness.
+
 ## What it costs
 
 The network's time per frame on an RX 7900 XTX, one pass, measured from submit to completion
@@ -289,9 +304,10 @@ glslang: `fetch_deps.sh` puts glslang 16.5.0 into `toolchain/`, the build uses t
 reproducible only with it.
 
 ```
-git clone <this repository> && cd DLSSNR-AMD && git checkout rdna3
+git clone https://github.com/hedonemaeda/DLSSNR-RDNA3 && cd DLSSNR-RDNA3
+git checkout port/rdna3-0.0.8.3
 bash fetch_deps.sh                        # pinned third-party sources and glslang 16.5.0 -> toolchain/, artifacts/ref/
-bash linux/build/build_vulkan_loader.sh   # the patched Vulkan loader the vulkan and dx9 routes ship
+NR_ARCH=x86_64 bash linux/build/build_vulkan_loader.sh   # the patched Vulkan loader the vulkan and dx9 routes ship
 NR_GPU=rdna3 bash linux/build/build_package.sh
 ```
 
@@ -317,7 +333,7 @@ ReShade add-on, the OptiScaler DLLs and the model tools, and writes
 Unpack the package, then point the installer at the folder with the game's exe and at the zip:
 
 ```
-bash install.sh "<folder with the game's exe>" reshade --dll streamline.zip
+bash install.sh "<folder with the game's exe>" reshade-feeder --dll streamline.zip
 ```
 
 The routes are the main project's: `optiscaler` for games with a DLSS, FSR or XeSS option, `reshade` for

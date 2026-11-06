@@ -9,6 +9,7 @@
 # or 0.
 set -euo pipefail
 cd -- "$(dirname -- "$0")/../.."
+source linux/build/reproducible.sh
 
 out=$(realpath -m -- "${1:-artifacts/optiscaler/asi}")
 case "$out" in "$(pwd)"/*) ;; *) echo 'build directory must be in the project' >&2; exit 2;; esac
@@ -52,7 +53,7 @@ done
 "$cxx" -std=c++17 -O2 -DNDEBUG -I"$imgui" -include linux/src/pe/mingw_d3d12_compat.h -c "$imgui/imgui_impl_dx12.cpp" \
     -o "$out/im_imgui_impl_dx12.o"
 # nr_present_probe.exe (dlssnr-amd\): finds DXGI's swap-chain methods for NR Control in a process of its own.
-"$cxx" -std=c++17 -O2 -DNDEBUG -municode linux/src/pe/nr_present_probe.cpp -o "$out/nr_present_probe.exe" \
+"$cxx" -std=c++17 -O2 -DNDEBUG -Wl,--no-insert-timestamp -municode linux/src/pe/nr_present_probe.cpp -o "$out/nr_present_probe.exe" \
     -ldxgi -static -static-libgcc -static-libstdc++
 
 # Include the menu/backend in the Vulkan symbol probe: their graphics calls are not in the compute runtime.
@@ -61,7 +62,7 @@ NR_ARCH=x86_64 NR_INT4=$int4 NR_ASI_VK_OBJECTS=1 bash linux/build/build_optiscal
 shared_objs=("$out/model.o" "$out/session.o" "$out/config.o" "$out/interop.o" "$out/vram_ledger.o" "$out/log.o" "$out/vkdevice.o"
              "$out/nr_runtime.o" "$out/nr_native_plan.o" "$out/nr_renodx.o" "$out/renodx_route.o" "$out/control.o"
              "$out/screenshot.o" "$out"/mh_*.o)
-"$cxx" -shared -o "$out/dlssnr-amd.asi" "$out/asi_main.o" "$out/crash.o" "$out/asi_wilsjo2.o" "$out/asi_wilsjo2_vk.o" "$out/nr_wilsjo2.o" "$out/asi_hudcap.o" "$out/menu.o" "$out"/im_*.o "${shared_objs[@]}" "$out/vulkan_lazy_s.o" \
+"$cxx" -Wl,--no-insert-timestamp -shared -o "$out/dlssnr-amd.asi" "$out/asi_main.o" "$out/crash.o" "$out/asi_wilsjo2.o" "$out/asi_wilsjo2_vk.o" "$out/nr_wilsjo2.o" "$out/asi_hudcap.o" "$out/menu.o" "$out"/im_*.o "${shared_objs[@]}" "$out/vulkan_lazy_s.o" \
     "$out/vulkan_lazy_c.o" -ld3d12 -ldxgi -lole32 -lversion -static -static-libgcc -static-libstdc++
 
 echo "built $out/dlssnr-amd.asi ($(stat -c %s "$out/dlssnr-amd.asi") bytes), $out/nr_present_probe.exe and $out/shaders/wilsjo2"

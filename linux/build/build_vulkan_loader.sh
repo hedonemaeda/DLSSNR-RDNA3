@@ -26,6 +26,7 @@
 #         to be stated).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+source linux/build/reproducible.sh
 src=artifacts/ref/Vulkan-Loader
 tag=v1.4.357
 if [[ ! -d "$src" ]]; then
@@ -43,7 +44,7 @@ for arch in "${arches[@]}"; do
     mkdir -p "$out"
     cmake -S "$src" -B "$src/build-$arch" -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE="$PWD/linux/vulkan-loader/toolchain-$arch.cmake" \
-        -DCMAKE_BUILD_TYPE=Release -DUPDATE_DEPS=ON -DBUILD_TESTS=OFF -DUSE_GAS=ON > "$src/cmake-$arch.log" 2>&1
+        -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--no-insert-timestamp -DCMAKE_BUILD_TYPE=Release -DUPDATE_DEPS=ON -DBUILD_TESTS=OFF -DUSE_GAS=ON > "$src/cmake-$arch.log" 2>&1
     ninja -C "$src/build-$arch" > "$src/ninja-$arch.log" 2>&1
     cp -- "$src/build-$arch/loader/vulkan-1.dll" "$out/vulkan-1.dll"
     extra=(); [[ $arch == i686 ]] && extra=(-Wl,--kill-at)
