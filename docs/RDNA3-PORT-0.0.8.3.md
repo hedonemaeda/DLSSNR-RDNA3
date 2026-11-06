@@ -120,3 +120,30 @@ holding the listed version; do not silently substitute another checksum.
 `SOURCE_DATE_EPOCH` defaults to the source commit's timestamp, PE link timestamps
 are zeroed and the final tar/gzip metadata is normalized. `NR_SIGN=1` uses an
 ephemeral certificate and is outside the reproducible-build comparison.
+
+## Regression and distribution checks
+
+- Rebuilt all six RDNA3 variants independently and compared every file, including
+  temporal SPIR-V and markers: EXACT (72 / 67 / 72 / 98 / 100 / 102 files for
+  default / experimental / Quality / Balanced / Performance / Ultra).
+- Legacy INT4: 68 SPIR-V files remain identical to the pre-port build; the same
+  five pre-block noise-binding variants change as in the default network. All
+  old frame/layer goldens are unchanged. The legacy path is test-only; normal
+  packages explicitly select the new calibration.
+- CPU SPIR-V checks found no native FP8 types. Integer WMMA instructions occur
+  in equal marked/unmarked counts: Balanced/Performance 750, Ultra 754; legacy
+  502. This checks the SPIR-V pairing, not the driver's resulting ISA rewrite.
+- All six Linux RDNA4 variants compile; their shader source tree is exactly the
+  pinned upstream target's. Native planner emits 152 original / 76 small steps
+  for 720p, 1080p, 1918x1078, 1440p and 4K.
+- Native runtime, test runner and legacy test-only runtime compile. CPU descriptor
+  test, config generation, path/ImGui guards and shell/Python syntax checks pass.
+- Distribution audit now checks named model files, model-container magic and the
+  known NVIDIA DLL hashes in tar/zip archives. CI uses it for both platforms;
+  private builds with explicitly supplied models remain possible and unshareable.
+- Windows package selection is pinned to its pre-port Linux ACO source snapshot
+  (`960038f`), extracted from Git into generated build output. Its unchanged host
+  still expects noise in weights and legacy INT4, so feeding it the newly ported
+  Linux SPIR-V would be incorrect. This narrow packaging fix preserves the old
+  Windows network; it does not port Windows runtime features or enable the new
+  networks there. The normal Linux build continues using the new sources.

@@ -354,7 +354,7 @@ if [[ "$arch" == x86_64 || "$arch" == i686 ]]; then
     i4="$pkg/int4"
     NR_INT4=1 NR_PROGRAMS_ONLY=1 bash linux/build/build_package.sh "$out/int4"
     layer32=0; [[ "$arch" == i686 ]] && layer32=1
-    NR_LAYER32=$layer32 bash linux/build/build_int4.sh "$out/int4/parts" > /dev/null
+    NR_INT4_LEGACY=0 NR_LAYER32=$layer32 bash linux/build/build_int4.sh "$out/int4/parts" > /dev/null
     mkdir -p -- "$i4/reshade" "$i4/dlssnr-amd"
     cp -- "$out/int4/dlssnr_amd.addon$bits" "$i4/reshade/"
     cp -r -- "$out/int4/parts/data" "$i4/dlssnr-amd/int4"
@@ -390,5 +390,8 @@ tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owne
     gzip -n > "$out/$archive"
 # The finished package goes beside the installer sources in linux/package/ (not in git).
 mv -f -- "$out/$archive" "linux/package/$archive"   # one copy only; package-build/ is scratch
+if [[ -z "$model" && -z "$small" ]]; then
+    python3 linux/build/check_package.py "linux/package/$archive"
+fi
 du -sh -- "$pkg"
 sha256sum -- "linux/package/$archive"
