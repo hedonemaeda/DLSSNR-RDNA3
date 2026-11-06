@@ -15,3 +15,5 @@ dlssnr-amd.pipelinecache
 # except the int4 mixed tables: per-matrix corrections and calibration means, no weight values
 !/linux/data/int4/**/*.bin
 nvngx*
+/temp/
+/logs/
