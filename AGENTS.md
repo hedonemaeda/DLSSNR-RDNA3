@@ -28,8 +28,9 @@ Notes for contributors and coding assistants. README.md covers what the project 
   intentionally change the network. They require their own references, never the baseline golden.
 - **RenoDX's shaders stay RenoDX's.** `linux/shaders/renodx/` is RenoDX's code under its MIT licence; changes
   there are speed changes that leave every output bit as it was, each listed in the README in that folder.
-- **Windows ACO Mode has a record for every network SPIR-V.** ACO Mode (the Windows default) runs the Linux
-  network shaders (`linux/build/build_network.py rdna4`, int4 mixed's with `--int4`) as machine code from
+- **Windows ACO Mode has a record for every network SPIR-V.** The unchanged Windows runtime builds its
+  matching pre-port Linux shaders with `windows/build/build_linux_aco.py`. Keep current Linux shaders
+  (`linux/build/build_network.py rdna4`, optimized INT4 with `--int4`) covered too. ACO machine code is in
   `windows/data/aco/records` and `windows/data/aco/int4/records`, found by the SPIR-V's hash. A new or changed
   Linux network shader needs new records in both (a missing one turns ACO Mode off for the run), and a new
   pipeline whose name has no native Windows shader needs a template alias in `shell-aliases.txt`.

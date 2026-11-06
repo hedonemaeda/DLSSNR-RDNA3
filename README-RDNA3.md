@@ -6,13 +6,14 @@ Everything in the [main README](README.md) that is not about the card still appl
 warnings: this is an early project, do not use it in online games with anti-cheat, and it comes
 without warranty.
 
-- **Tested only on an RX 7900 XTX** (Mesa 26.2.3, RADV). Other RDNA3 cards should work and are untested.
+- The **pre-port fork was tested only on an RX 7900 XTX** (Mesa 26.2.3, RADV). This port still needs GPU qualification.
 - Verified on single frames against NVIDIA's own output, with the frames and settings of
   [docs/ngx-verification](docs/ngx-verification/NGX-VERIFICATION.md): 45.47 dB at 1080p, 47.71 dB at
   1440p and 49.02 dB at 4K, against 45.56, 47.99 and 49.06 dB for the RDNA4 build. Moving sequences
   have not been run on RDNA3.
-- The package also carries the optional [int4 mixed](#int4-mixed-optional) network: 7 to 8 % less time a
-  frame for 3.5 to 5.4 dB less against NVIDIA's output. The installer asks; the default is the network above.
+- The original fork's optional [int4 mixed](#int4-mixed-optional) network measured 7 to 8 % less time a
+  frame for 3.5 to 5.4 dB less against NVIDIA's output. These historical measurements are retained below;
+  this port installs the new optimized networks instead.
 
 ## Port to 0.0.8.3
 

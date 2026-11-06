@@ -178,31 +178,66 @@ being counted as a GPU test.
 
 ## Delivered artifact and actual build record
 
-- Built implementation/source revision: `397bb23` (`0.0.8.3-64-g397bb23`).
-- Branch: `port/rdna3-0.0.8.3` in the owner's writable origin.
+- Build source: `2ab033e5eacada86eee26736e74c6d530632370f`
+  (`0.0.8.3-65-g2ab033e`). Check out this exact commit to reproduce the archive;
+  later report-only commits have the same runtime, shaders and build recipe.
+- Branch: `port/rdna3-0.0.8.3` in the owner's writable origin; no PR or release tag.
 - Worktree retained: `/home/gedomada/projects/dlssnr-rdna3-port-0.0.8.3`.
-- Package: `linux/package/DLSSNR-AMD-Vulkan-Linux-0.0.8.3-64-g397bb23-x86_64-rdna3.tar.gz`.
-- Size: 259,142,989 bytes; 1,133 files; unpacked staging directory about 454 MiB.
-- SHA-256: `918c924fcd431f316b25107373d3cca9272b6d41e0d7baa20988bb50f6f11825`.
-- Build logs: `build/port-logs/` (especially `package-final.log`, `package-resume.log`,
-  `package-finish.log`, `native-final.log`, `shader-reproducibility.txt`,
-  `static-shaders-final.txt` and `aco-coverage-final.txt`).
-- Entry command: `NR_GPU=rdna3 NR_ARCH=x86_64 bash linux/build/build_package.sh`.
-  Project-local 7z launcher/codec resolution interrupted the first packaging
-  attempts; after correcting the launcher, packaging resumed from unchanged
-  already-built runtime objects in this worktree. All components and the final
-  archive were built. The temporary continuation script also needed its model-tools
-  path set before final archival; it is generated scratch, not part of the recipe.
-  Runtime/shader sources at `67c7700` and `397bb23` are identical; intervening
-  changes concern packaging, checks and documentation.
-- GPU, extraction/model SHA and game tests were not run. A second independent
-  full host/package rebuild was not run; all six shader families were independently
-  rebuilt byte for byte, and package metadata/repacking were checked separately.
+- **Trial package:** `linux/package/DLSSNR-AMD-Vulkan-Linux-0.0.8.3-65-g2ab033e-x86_64-rdna3.tar.gz`.
+- Size: 259,161,157 bytes; 1,135 files; staging directory about 454 MiB.
+- SHA-256: `3691b2db4c6f0b6f21ed4ad80a0daee6a38eca0ea190c0941da3edacd30b8408`.
+- Adjacent `.tar.gz.sha256` file allows `sha256sum -c` in `linux/package/`.
+- The archive includes the project MIT license, dependency notices and
+  `RDNA3-TARGET-TESTING.md` with OptiScaler installation, rollback and target checks.
+- **Full recipe passed with exit 0**, from a clean worktree at the build source:
+  `source build/local-tools.env`, then
+  `NR_GPU=rdna3 NR_ARCH=x86_64 bash linux/build/build_package.sh`.
+  This rebuilt all host/add-on/plugin components, six shader families, native
+  INT4 tools/layer and the final archive. Its pinned loader prerequisite had been
+  built separately with `NR_ARCH=x86_64 bash linux/build/build_vulkan_loader.sh`.
+- Earlier packaging attempts at `397bb23` needed a corrected local 7z launcher
+  and manual continuation. The final full recipe above needs no continuation;
+  interrupted logs remain as an audit trail.
+- All 1,135 archived payloads match staging by SHA-256. Tar ownership is 0:0,
+  mtimes equal the source commit's epoch, siblings are sorted, gzip mtime is 0.
+  Repeating tar/gzip from staging yields the **identical complete archive**.
+- Against the earlier `397bb23` package, 1,132 payloads are identical. The only
+  changed payload is `dlssnr-amd.asi` with its new Git version stamp; the project
+  license and trial instructions are added. All shaders, other PE binaries,
+  native tools and INT4 layer remain byte-identical across those builds.
+  The independently rebuilt DXGI probe is also EXACT with a zero PE timestamp.
+- CPU checks on the **packaged** shader directories pass: default 122 SPIR-V
+  (including processing shaders), experimental 61, Quality 64, Balanced 76,
+  Performance 78, Ultra 78. Paired integer WMMA counts are 750/750/754 for the
+  latter three. No native FP8 types or missing rewrite markers were found.
+- Package audit passes; named models, model-container magic, unexpected `.bin`
+  tensors and known NVIDIA DLL hashes are rejected. The actual DLL member list
+  contains OptiScaler, AMD/Intel helpers, ReShade and Vulkan loader binaries only.
+  Synthetic negative cases exercise model renaming/magic and binary-tensor checks;
+  intended upstream calibration-table paths remain allowed.
+- Host environment: Ubuntu 24.04.5, native GCC 13.3.0, glibc 2.39; cross compiler,
+  CMake, 7z and auxiliary packages pinned in `linux/build/ubuntu-24.04-tools.tsv`.
+  Shader and reference dependencies are pinned by `fetch_deps.sh` (glslang 16.5.0,
+  Slang 2026.19). No system package, GPU driver or service was installed.
+- GPU execution, extraction/model SHA and game tests were **not run**. Independent
+  shader builds, unchanged host payload comparisons and repeated archive creation
+  were verified; two complete builds of the exact final commit in fresh worktrees
+  were not performed. No claim of cross-host bit reproducibility is made.
 
-Later report/test-path-only commits do not change the implementation of the
-runtime in this artifact. Install, rollback, target commands, references and logs:
-[RDNA3-TARGET-TESTING.md](RDNA3-TARGET-TESTING.md).
+Build logs remain in `build/port-logs/`. A snapshot is retained at
+`artifacts/port-delivery/build-logs-2ab033e.tar.gz`; its SHA-256 is beside it.
+Key evidence:
 
-The final recipe also ships the project MIT license and the target trial checklist
-inside the RDNA3 package. The artifact recorded above precedes that packaging-only
-addition; a full recipe rebuild and updated delivery record follow below.
+| Log | Evidence |
+| --- | --- |
+| `package-clean-recipe.log` | Complete final build and package audit |
+| `delivery-build-environment.txt` | Exact host/tool versions and input hashes |
+| `delivery-inspection.txt`, `delivery-payload-sha256.json` | Metadata, architecture, included modes/notices, payload hashes |
+| `delivery-payload-comparison.txt`, `pe-reproducibility.txt` | Unchanged payloads and independent probe comparison |
+| `shader-reproducibility.txt`, `archive-reproducibility-final.txt` | Independent shader rebuilds and repeated archive bytes |
+| `static-packaged-shaders.txt`, `aco-coverage-final.txt` | Packaged gfx11 variants and RDNA4/Windows record coverage |
+| `installer-rejection.txt`, `package-audit-rejection.txt` | Rejected malformed model and distribution guard cases |
+
+Install, rollback, target commands, inputs, numerical references and requested logs:
+[RDNA3-TARGET-TESTING.md](RDNA3-TARGET-TESTING.md). The original Z1 Extreme regressions
+remain unverified until that target matrix passes.
