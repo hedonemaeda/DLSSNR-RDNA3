@@ -180,7 +180,7 @@ being counted as a GPU test.
 
 - Build source: `2ab033e5eacada86eee26736e74c6d530632370f`
   (`0.0.8.3-65-g2ab033e`). Check out this exact commit to reproduce the archive;
-  later report-only commits have the same runtime, shaders and build recipe.
+  later delivery documentation and ignore rules leave runtime, shaders and build recipe unchanged.
 - Branch: `port/rdna3-0.0.8.3` in the owner's writable origin; no PR or release tag.
 - Worktree retained: `/home/gedomada/projects/dlssnr-rdna3-port-0.0.8.3`.
 - **Trial package:** `linux/package/DLSSNR-AMD-Vulkan-Linux-0.0.8.3-65-g2ab033e-x86_64-rdna3.tar.gz`.
