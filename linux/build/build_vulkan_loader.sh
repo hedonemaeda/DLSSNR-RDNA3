@@ -33,7 +33,12 @@ if [[ ! -d "$src" ]]; then
 fi
 root=$PWD
 ( cd "$src" && git checkout -q -- loader && python3 "$root/linux/vulkan-loader/patch-local-override.py" && python3 "$root/linux/vulkan-loader/patch-no-dxgi.py" && python3 "$root/linux/vulkan-loader/patch-queue-info.py" )
-for arch in i686 x86_64; do
+arches=(i686 x86_64)
+if [[ -n "${NR_ARCH:-}" ]]; then
+    case "$NR_ARCH" in i686|x86_64) arches=("$NR_ARCH");;
+        *) echo 'NR_ARCH must be x86_64 or i686' >&2; exit 2;; esac
+fi
+for arch in "${arches[@]}"; do
     out=artifacts/vulkan-loader/$arch
     mkdir -p "$out"
     cmake -S "$src" -B "$src/build-$arch" -G Ninja \

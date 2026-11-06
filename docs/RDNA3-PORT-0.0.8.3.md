@@ -52,3 +52,20 @@ intentional temporal precision change from upstream; use 32 for old-history comp
 
 Implementation evidence, actual commands, artifact paths and remaining work will
 be appended as the port progresses. GPU timing and game compatibility remain unverified.
+
+## Stage 1 evidence
+
+- Imported Linux 0.0.8.1 (`d12c104`) and 0.0.8.2 (`050b8e5`); Windows files untouched.
+- Retained temporal reuse passes and configuration. Added `runtime_blit` alongside them.
+- RDNA3 descriptors now copy every declared binding (including raw aliases), replace
+  e4m3 bindings through the twin map, and replace raw aliases with byte buffers.
+- Twins belong to `GraphAct` / `GraphArenas`, so shared resize plans and offload/reload
+  retain both formats. Tail staging and arena zeroing update both buffers.
+- Ported dedicated noise buffer and truthful `post_no_out1` / `noise_buffer` manifest keys.
+- Pinned glslang 16.5.0 built the baseline (52 network, 8 temporal) and legacy INT4
+  (65 network, 8 temporal) before shader edits. After memory changes, 61 SPIR-V files
+  remain byte-identical; only the two pre-blocks and their three temporal variants
+  changed because the noise binding moved. No network arithmetic was intentionally changed.
+- `check_paths.sh`, `check_imgui.sh`, generated INIs and the CPU descriptor regression
+  pass. Native runtime and MinGW runtime translation units compile with the RDNA3 defines.
+- Full GPU checks were not run: this worker has no gfx11 GPU or model weights.
