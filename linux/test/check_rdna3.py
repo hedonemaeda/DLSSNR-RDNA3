@@ -192,7 +192,7 @@ def layer_hashes():
     rgba = np.fromfile(BUILD / "in_1080p.rgba8", np.uint8).reshape(-1, 4).astype(np.float32) / 255
     blob = BUILD / "in_1080p.f32"
     rgba.tofile(blob)
-    out = run([str(BUILD / "nr_graph"), "--plan", str(plan), "--model-pack", str(BUILD / "inst/dlssnr-amd/dlssnr.bin"),
+    out = run([str(BUILD / "nr_graph"), "--plan", str(plan), "--model-pack", str(BUILD / "inst/dlssnr-amd/CC_SILVER_AARDWOLD.bin"),
                "--spv-dir", str(ROOT / "build/linux/rdna3/network"), "--host-boundary", "--no-reuse",
                "--source-width", str(w), "--source-height", str(h), "--in-image", str(blob), "--value-stats"])
     rows = []
@@ -212,7 +212,7 @@ def profile(name="4k"):
     plan.write_text(run([str(BUILD / "mkplan"), str(w), str(h)]))
     blob = BUILD / f"in_{name}.f32"
     (np.fromfile(in_path, np.uint8).reshape(-1, 4).astype(np.float32) / 255).tofile(blob)
-    out = run([str(BUILD / "nr_graph"), "--plan", str(plan), "--model-pack", str(BUILD / "inst/dlssnr-amd/dlssnr.bin"),
+    out = run([str(BUILD / "nr_graph"), "--plan", str(plan), "--model-pack", str(BUILD / "inst/dlssnr-amd/CC_SILVER_AARDWOLD.bin"),
                "--spv-dir", str(ROOT / "build/linux/rdna3/network"), "--host-boundary", "--reuse",
                "--source-width", str(w), "--source-height", str(h), "--in-image", str(blob),
                "--warmup", "3", "--repeats", "10", "--per-layer"])
@@ -236,7 +236,7 @@ def isa(name="1080p"):
     plan.write_text(run([str(BUILD / "mkplan"), str(w), str(h)]))
     blob = BUILD / f"in_{name}.f32"
     (np.fromfile(in_path, np.uint8).reshape(-1, 4).astype(np.float32) / 255).tofile(blob)
-    argv = [str(BUILD / "nr_graph"), "--plan", str(plan), "--model-pack", str(BUILD / "inst/dlssnr-amd/dlssnr.bin"),
+    argv = [str(BUILD / "nr_graph"), "--plan", str(plan), "--model-pack", str(BUILD / "inst/dlssnr-amd/CC_SILVER_AARDWOLD.bin"),
             "--spv-dir", str(ROOT / "build/linux/rdna3/network"), "--host-boundary", "--reuse",
             "--source-width", str(w), "--source-height", str(h), "--in-image", str(blob)]
     wiring = run(argv + ["--wiring"])

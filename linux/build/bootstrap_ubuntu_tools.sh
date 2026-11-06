@@ -15,6 +15,8 @@ done < linux/build/ubuntu-24.04-tools.tsv
 for compiler in gcc g++; do
     ln -sfn "x86_64-w64-mingw32-$compiler-posix" "toolchain/ubuntu/usr/bin/x86_64-w64-mingw32-$compiler"
 done
+# Ubuntu's 7z launcher uses /usr/lib; resolve the extracted executable locally.
+ln -sfn ../lib/7zip/7z toolchain/ubuntu/usr/bin/7z
 # The dev package's unversioned symlink needs the host's existing Vulkan loader, never a GPU driver download.
 loader=$(readlink -f /usr/lib/x86_64-linux-gnu/libvulkan.so.1)
 [[ -f $loader ]] || { echo 'The native tests need the host Vulkan loader.' >&2; exit 1; }

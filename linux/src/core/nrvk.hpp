@@ -119,9 +119,9 @@ struct Context {
         NRVK_CHECK(r);
     }
 
-    // The RX 9070 XT. NR_GPU overrides with a physical-device index, which is
-    // the only reason to run on anything else: the iGPU at 1002:13c0 shares
-    // /dev/dri and would otherwise be a silent wrong answer.
+    // RDNA4's reference card, or an AMD discrete/integrated gfx11 candidate.
+    // Z1 Extreme is integrated; require_matrix_config validates its WMMA support.
+    // NR_GPU overrides with a physical-device index when several candidates exist.
     void create() {
         VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
         app.pApplicationName = "DLSS-NR-on-AMD";
@@ -139,7 +139,8 @@ struct Context {
             VkPhysicalDeviceProperties p;
             vkGetPhysicalDeviceProperties(devices[i], &p);
             const bool want = forced ? (i == uint32_t(atoi(forced)))
-                                     : (p.vendorID == 0x1002 && (NR_ARCH_RDNA3 ? p.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+                                     : (p.vendorID == 0x1002 && (NR_ARCH_RDNA3 ? (p.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ||
+                                                                                      p.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
                                                                    : p.deviceID == 0x7550));
             if (!want) continue;
             if (physical) throw std::runtime_error("more than one candidate GPU; set NR_GPU");

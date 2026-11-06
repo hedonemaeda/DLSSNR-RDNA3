@@ -112,7 +112,7 @@ def layer_hashes():
     rgba = np.fromfile(BUILD / "in_1080p.rgba8", np.uint8).reshape(-1, 4).astype(np.float32) / 255
     blob = BUILD / "in_1080p.f32"
     rgba.tofile(blob)
-    out = run([str(BUILD / "nr_graph_small"), "--plan", str(plan), "--model-pack", str(INST / "dlssnr-amd" / "dlssnr-small.bin"),
+    out = run([str(BUILD / "nr_graph_small"), "--plan", str(plan), "--model-pack", str(INST / "dlssnr-amd" / "CC_SMALL_FP8.bin"),
                "--spv-dir", str(INST / "dlssnr-amd" / "shaders"), "--host-boundary", "--no-reuse",
                "--source-width", str(w), "--source-height", str(h), "--in-image", str(blob), "--value-stats"])
     import re
