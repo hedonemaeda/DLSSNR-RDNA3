@@ -80,9 +80,15 @@ Actual checks completed on homeserver:
 
 ## Delivered update
 
-Branch: `fix/nr-control-cursor-fg`, pushed to the owner's origin. No release tag or PR.
+Branch: `fix/nr-control-cursor-fg`, pushed to the owner's origin. No upstream PR.
+At the owner's subsequent request to publish the download on GitHub, the update
+was published as a [trial prerelease](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/tag/trial-nr-control-2e2cce4),
+with tag `trial-nr-control-2e2cce4` pointing to the exact build source. It is not
+marked latest; GPU qualification is still pending.
 Worktree: `/home/gedomada/projects/dlssnr-rdna3-fix-control`.
 
+- Public [update archive](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/download/trial-nr-control-2e2cce4/NR-Control-0.0.8.3-68-g2e2cce4-x86_64-rdna3.tar.gz)
+  and [SHA-256 file](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/download/trial-nr-control-2e2cce4/NR-Control-0.0.8.3-68-g2e2cce4-x86_64-rdna3.tar.gz.sha256).
 - Archive: `artifacts/control-hotfix/NR-Control-0.0.8.3-68-g2e2cce4-x86_64-rdna3.tar.gz`.
 - Archive SHA-256: `3c093e2bd94e2f698d5f1aad27ef70051c4f0d886920203509f10817b92f32b6`;
   an adjacent `.sha256` file allows verification with `sha256sum -c`.
