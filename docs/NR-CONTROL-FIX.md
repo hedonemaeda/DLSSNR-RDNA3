@@ -61,7 +61,37 @@ NR_GPU=rdna3 bash linux/build/build_asi.sh
 The source fixture tests coherent extent snapshots with concurrent writers/readers,
 invalid/generated-frame input, real resize, provider Off/On, expiry, low-frame-rate
 ambiguity, declared MFG, multiple contexts and generator module classification.
-Build and artifact evidence will be appended after compilation.
+Actual checks completed on homeserver:
+
+- Native fixture passes; AddressSanitizer + UndefinedBehaviorSanitizer run passes.
+- `check_paths.sh` and `check_imgui.sh` pass.
+- Full `NR_GPU=rdna3 bash linux/build/build_asi.sh` passes with exit 0 from clean
+  source `2e2cce42aec5dee7348466e29fe9f1fd98f686fd` and this worktree's pinned tools.
+- The PE is AMD64, has a zero timestamp and exports InitializeASI. It imports no
+  `vulkan-1.dll` or dynamic `libwinpthread-1.dll`. Its embedded source ID is `2e2cce4`.
+- All 26 rebuilt wilsjo2 processing SPIR-V files are EXACT against the previous
+  `0.0.8.3-65-g2ab033e` package. Network shader/data/planner/runtime and old goldens
+  are unchanged in Git; no GPU numerical or game test was run.
+- The update audit passes: exactly the ASI, README, project MIT license and five
+  dependency notices (Inter, Dear ImGui, MinHook, RenoDX, FidelityFX FSR1).
+  There are no models, NVIDIA DLLs or third-party FG binaries in this artifact.
+- Repeating normalized tar/gzip gives an identical archive. A second full plugin
+  rebuild was not run.
+
+## Delivered update
+
+Branch: `fix/nr-control-cursor-fg`, pushed to the owner's origin. No release tag or PR.
+Worktree: `/home/gedomada/projects/dlssnr-rdna3-fix-control`.
+
+- Archive: `artifacts/control-hotfix/NR-Control-0.0.8.3-68-g2e2cce4-x86_64-rdna3.tar.gz`.
+- Archive SHA-256: `3c093e2bd94e2f698d5f1aad27ef70051c4f0d886920203509f10817b92f32b6`;
+  an adjacent `.sha256` file allows verification with `sha256sum -c`.
+- Plugin: 8,212,594 bytes; SHA-256
+  `ce9fb15224ffddea6ca9f457a109f93807c9c9c1ede3c7bd54a60b655863d90e`.
+- The direct ASI builder stamps its source ID, so NR Control shows **2e2cce4**.
+  Later documentation commits do not change this executable.
+- Logs: `build/control-fix-logs/`. A snapshot with the exact packaging script is
+  `artifacts/control-hotfix/build-logs-2e2cce4.tar.gz` (checksum beside it).
 
 ## Installation, rollback and target trial
 

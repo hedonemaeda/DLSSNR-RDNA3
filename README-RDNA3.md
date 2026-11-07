@@ -30,6 +30,9 @@ migrates checksum-verified legacy source models and rebuilds the fitted networks
 The old INT4 network is deliberately replaced by optimized in installations; its
 old tables and goldens are isolated for the legacy regression harness.
 
+For the NR Control pointer / XeSS MFG XMX status and footer follow-up, see
+[the plugin update and trial instructions](docs/NR-CONTROL-FIX.md).
+
 ## What it costs
 
 The network's time per frame on an RX 7900 XTX, one pass, measured from submit to completion

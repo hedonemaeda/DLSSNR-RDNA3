@@ -143,9 +143,10 @@ Measured facts worth knowing before changing kernels:
   sharing artifacts. Keep upstream license and attribution files.
 - homeserver's Fusion worker reports no GPU. Do not claim GPU tests, frame timings or game compatibility
   from a successful build or software Vulkan execution. The owner reported Z1 Extreme, Dragon's Dogma 2,
-  DX12/OptiScaler under Proton CachyOS Latest and Mesa 26.2.5: green output and slowdown after resolution/SR
+  DX12/OptiScaler with XeSS MFG XMX (`realdody/dlssg-to-xefg-xmx`), Proton CachyOS Latest and Mesa 26.2.5: green output and slowdown after resolution/SR
   changes and with a second pass, plus FG menu flicker. Exact Proton/game builds and GPU qualification remain pending.
   The port and target checklists are in `docs/RDNA3-PORT-0.0.8.3.md` and `docs/RDNA3-TARGET-TESTING.md`.
+  The follow-up cursor/FG/footer trial and artifact are recorded in `docs/NR-CONTROL-FIX.md`; live validation is pending.
 - Missing target hardware does not block source work, shader compilation, packaging and CPU/static checks.
   Record GPU-dependent checks as unrun and provide exact commands and required inputs for the target machine.
 - Report the implemented features, actual checks, artifact locations and remaining limitations precisely.
