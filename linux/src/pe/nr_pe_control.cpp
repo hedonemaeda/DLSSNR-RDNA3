@@ -172,6 +172,7 @@ void menu_changed(bool open) {
         std::lock_guard<std::mutex> lock(g_clip_mutex);
         g_real_clip(g_game_clipped ? &g_game_clip : nullptr);
         g_real_setpos(g_frozen.x, g_frozen.y);   // the cursor back where the game left it
+        if (g_window) PostMessageW(g_window, WM_SETCURSOR, reinterpret_cast<WPARAM>(g_window), MAKELPARAM(HTCLIENT, WM_MOUSEMOVE));
     }
 }
 
@@ -184,6 +185,10 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             ++s->chars_written;
         }
         if (s->menu_open) {
+            if (msg == WM_SETCURSOR && LOWORD(lp) == HTCLIENT) {
+                SetCursor(nullptr);   // ImGui draws the pointer with the menu, including generated frames
+                return TRUE;
+            }
             // The menu has the keyboard and mouse: the game's window gets none of it.
             if (msg == WM_INPUT) return DefWindowProcW(hwnd, msg, wp, lp);
             if ((msg >= WM_KEYFIRST && msg <= WM_KEYLAST) || (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST)) return 0;
@@ -325,6 +330,11 @@ void layer_changed(int number) {
     r->gpu_ms = r->network_ms = 0.f;
     r->panel_lines = 0;
     r->updated = 0;
+}
+
+nr::control::PresentationFacts& presentation_facts() {
+    static nr::control::PresentationFacts facts;
+    return facts;
 }
 
 void asi_facts(const char* build, const char* frame_gen) {

@@ -2604,6 +2604,8 @@ void pacing_watch() {
 
 void frame_generation_line() {
     ++g_pacing_presents;
+    static std::mutex meter_mutex;
+    std::lock_guard<std::mutex> meter_lock(meter_mutex);
     static const bool pacing = [] {
         if (GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "wine_get_version")) std::thread(pacing_watch).detach();
         return true;
@@ -2617,7 +2619,9 @@ void frame_generation_line() {
     if (now - since < 1000) return;
     const uint64_t frames = g_fg_frames.load() - frames_at;
     char line[160];
-    const auto& decl = g_present.declaration;
+    const unsigned declared = nr::pe::control::presentation_facts().declaration(now);
+    nr::pe::control::presentation_facts().measurement(presents, frames, declared, now);
+    const auto fg = nr::pe::control::presentation_facts().snapshot(now).fg;
     // Frame generation seen on: the game's DLSS-G declaration, or more presents than game frames (capped by the display:
     // under 2x) in two seconds in a row of real play - at least 10 game frames a second. A loading screen or a menu
     // presents without upscaling (a few evaluates, many presents) and read as frame generation: one 120 ms pacing pause
@@ -2625,9 +2629,17 @@ void frame_generation_line() {
     static int ratio_seconds = 0;
     const bool playing = frames >= 10;
     ratio_seconds = playing && presents >= frames * 13 / 10 ? ratio_seconds + 1 : 0;
-    if ((decl.multiplier > 1 && now - decl.ms < 2000) || ratio_seconds >= 2) g_fg_on_ms = now;
-    if (decl.multiplier > 1 && now - decl.ms < 2000)
-        std::snprintf(line, sizeof line, NR_N("Frame generation: the game's DLSS-G, %ux (its own word)"), decl.multiplier);
+    if (declared > 1 || ratio_seconds >= 2) g_fg_on_ms = now;
+    if (fg.source == nr::control::FgSource::XeSSMFG) {
+        if (fg.state == nr::control::FgState::On)
+            std::snprintf(line, sizeof line, NR_N("Frame generation: XeSS MFG XMX enabled, %.0fx requested (NGX provider)"), fg.multiplier);
+        else std::snprintf(line, sizeof line, NR_N("Frame generation: XeSS MFG XMX interpolation disabled (NGX provider)"));
+    } else if (fg.source == nr::control::FgSource::FSR || fg.source == nr::control::FgSource::XeSS) {
+        std::snprintf(line, sizeof line, fg.state == nr::control::FgState::On
+            ? NR_N("Frame generation: %s enabled (provider status)") : NR_N("Frame generation: %s disabled (provider status)"),
+            fg.source == nr::control::FgSource::FSR ? "FSR" : "XeSS");
+    } else if (declared > 1)
+        std::snprintf(line, sizeof line, NR_N("Frame generation: the game's DLSS-G, %ux (its own word)"), declared);
     else if (!playing)
         std::snprintf(line, sizeof line, NR_N("Frame generation: not known (no game frame in the last second)"));
     else {
@@ -2786,6 +2798,7 @@ void on_present(IDXGISwapChain* sc, ID3D12CommandQueue* queue, int encoding) {
     nr::pe::watchdog::beat();
     nr::pe::stats::shown_present();
     nr::pe::watchdog::Phase phase("the system's Present (NR Control's hook)");
+    nr::asi::hudcap::poll_frame_generation();
     frame_generation_line();
     const bool served_above = GetTickCount64() - g_present.top_ms.load() < 1000;
     const bool fg_owned = g_fg_proxy_active.load() || fg_inner(sc) || (g_fg_proxy_held.load() && !game_swapchain(sc));
@@ -2930,15 +2943,8 @@ void adopt_swapchain(IUnknown* device, IDXGISwapChain* sc);
 
 // A frame-generation library: its own thread presents the game's frames and the generated ones to the swap chain under
 // its proxy. Present calls made from inside one are frame generation's, not the game's.
-bool fg_library_name(std::wstring name) {
-    for (wchar_t& c : name) c = wchar_t(std::towlower(c));
-    return name.rfind(L"libxess_fg", 0) == 0 || name.find(L"framegeneration") != std::wstring::npos ||
-           name.rfind(L"amd_fidelityfx", 0) == 0 || name == L"sl.dlss_g.dll" || name == L"nvngx_dlssg.dll" ||
-           name.rfind(L"dlssg_to_fsr3", 0) == 0 || name.rfind(L"dlss-enabler", 0) == 0 ||
-           // FSR 3.0 / 3.1.0 as DLLs: the frame-generation swap chain lives in the DX12 backend
-           name.rfind(L"ffx_backend_dx12", 0) == 0 || name.rfind(L"ffx_frameinterpolation", 0) == 0 ||
-           name.rfind(L"ffx_fsr3", 0) == 0;
-}
+bool fg_library_name(std::wstring name) { return nr::control::fg_library_name(std::move(name)); }
+
 // The swap chains a frame-generation swap chain made under its proxy while the game's call creating it was followed
 // (FSR 3.0 below): their Presents are frame generation's, whichever module makes them - with FSR 3.0 linked into the
 // game's executable its presenting thread runs in the executable. g_sc_lock.
@@ -3257,6 +3263,7 @@ void menu_once11() {
 void on_present11(IDXGISwapChain* sc, ID3D11Device* device) {
     nr::pe::watchdog::beat();
     nr::pe::stats::shown_present();
+    nr::asi::hudcap::poll_frame_generation();
     frame_generation_line();
     if (GetTickCount64() - g_d11_top_ms.load() < 1000) return;   // served at the game's own call
     {   // a swap chain of the game's (adopt_swapchain), not one OptiScaler or an overlay made; while none was seen
@@ -3877,6 +3884,8 @@ NVSDK_NGX_Result NR_NGX_MSABI hk_evaluate(ID3D12GraphicsCommandList* cmd, const 
             if (generated >= 1 && generated < 8 && get_uint(p, "DLSSG.NotRenderingGameFrames") == 0) {
                 const D3D12_RESOURCE_DESC d = dlssg_back->GetDesc();
                 g_present.declaration = {uint32_t(d.Width), d.Height, generated + 1, GetTickCount64(), g_present.presents};
+                nr::pe::control::presentation_facts().provider(nr::control::FgSource::DLSSG, h->Id, true,
+                                                              generated + 1, GetTickCount64());
             }
         }
         guard.unlock();
@@ -3907,6 +3916,7 @@ NVSDK_NGX_Result NR_NGX_MSABI hk_evaluate(ID3D12GraphicsCommandList* cmd, const 
     }
     struct Dev { ID3D12Device* d; ~Dev() { d->Release(); } } hold{device};
     menu_once(device);   // NR Control (above), if no swap chain of the game's was seen first
+    nr::pe::control::presentation_facts().upscaler({f.render_w, f.render_h, f.out_w, f.out_h}, GetTickCount64());
     ++g_fg_frames;   // a game frame (NR Control's frame-generation line)
     g_present.evaluate_ms = GetTickCount64();
     const bool renodx_only = std::all_of(chain->layers.begin(), chain->layers.end(), [](const Layer& l) {
@@ -7528,6 +7538,7 @@ NVSDK_NGX_Result NR_NGX_MSABI hk_vk_evaluate(VkCommandBuffer cmd, const NVSDK_NG
         vk_capture_guides(cmd, f, wf);
         if (g_front.load() == 0) decide_front(VK_NULL_HANDLE);   // the game may present through an address of its own
     }
+    nr::pe::control::presentation_facts().upscaler({f.render_w, f.render_h, f.out_w, f.out_h}, GetTickCount64());
     ++g_fg_frames;
     NVSDK_NGX_Result r;
     if (!before.empty()) {
@@ -8227,6 +8238,7 @@ NVSDK_NGX_Result NR_NGX_MSABI hk_d11_evaluate(ID3D11DeviceContext* ctx, const NV
     g_present.evaluate_ms = GetTickCount64();
     if (plan.present) d11_capture_guides(ctx, depth, motion, f);
     const nr::asi::Wilsjo2VkFrame wf = wilsjo2_vk_frame(p, f);
+    nr::pe::control::presentation_facts().upscaler({f.render_w, f.render_h, f.out_w, f.out_h}, GetTickCount64());
     ++g_fg_frames;
     NVSDK_NGX_Result r;
     if (!plan.before.empty()) {

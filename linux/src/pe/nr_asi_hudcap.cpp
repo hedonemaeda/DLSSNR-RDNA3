@@ -19,6 +19,8 @@
 #include "nr_asi_hudcap.hpp"
 #include "nr_hud_capture.hpp"
 #include "nr_pe_log.hpp"
+#include "nr_pe_control.hpp"
+#include "nr_ngx_abi.hpp"
 
 #include <MinHook.h>
 
@@ -720,7 +722,7 @@ struct FgState {
     // a hand-over seen while not armed (HUD FIX in another mode): its time (GetTickCount64), so NR Control can tell
     // whether the method could run before it is picked
     std::atomic<uint64_t> offered_ms{0};
-    bool hooked_ffx[3] = {}, hooked_xefg = false, hooked_sl = false;
+    bool hooked_ffx[3] = {}, hooked_xefg = false, hooked_sl = false, hooked_xemfg = false;
     uint64_t looked = 0;
     std::atomic<uint64_t> dlssg_ms{0};   // the last DLSS-G evaluate (through NGX) the Present layers ran at
 } gf;
@@ -793,16 +795,61 @@ void fg_note(void* caller, ID3D12Resource* r, D3D12_RESOURCE_STATES state, ID3D1
 using PFN_FfxConfigure = int32_t (*)(void*, const FfxHeader*);
 PFN_FfxConfigure real_ffx_configure[3];
 template <int I> int32_t ffx_configure(void* ctx, const FfxHeader* desc) {
+    const FfxConfigureFg* config = nullptr;
     for (const FfxHeader* h = desc; h; h = h->next)
         if (h->type == kFfxConfigureFg) {
             const auto* c = reinterpret_cast<const FfxConfigureFg*>(h);
+            config = c;
             if (c->enabled && c->hudless.resource)
                 fg_note(__builtin_return_address(0), static_cast<ID3D12Resource*>(c->hudless.resource),
                         d3d12_state_of_ffx(c->hudless.state), nullptr, true, true, "FSR frame generation");
             break;
         }
-    return real_ffx_configure[I](ctx, desc);
+    const int32_t result = real_ffx_configure[I](ctx, desc);
+    if (result == 0 && config)
+        nr::pe::control::presentation_facts().provider(nr::control::FgSource::FSR, reinterpret_cast<uintptr_t>(ctx),
+                                                      config->enabled, 0, GetTickCount64());
+    return result;
 }
+// Intel's xefg_swapchain_present_status_t has three 32-bit fields. Unlike the HUD-less resource tags, its
+// enabled flag and presented-frame count describe OptiScaler's output even when no HUD-less image was supplied.
+struct XefgPresentStatus { uint32_t frames; int32_t result; uint32_t enabled; };
+static_assert(sizeof(XefgPresentStatus) == 12);
+using PFN_XefgStatus = int32_t (*)(void*, XefgPresentStatus*);
+PFN_XefgStatus real_xefg_status;
+int32_t xefg_status(void* sc, XefgPresentStatus* status) {
+    const int32_t result = real_xefg_status(sc, status);
+    if (result >= 0 && status)
+        nr::pe::control::presentation_facts().provider(nr::control::FgSource::XeSS, reinterpret_cast<uintptr_t>(sc),
+                                                      status->enabled != 0, status->frames, GetTickCount64());
+    return result;
+}
+
+// dlssg-to-xefg-xmx calls XeFG's private execution API; no xefgSwapChain present-status call observes that route.
+// Follow its public NGX evaluate without changing parameters, resources, the result or its generated frames.
+using PFN_XemfgEvaluate = NVSDK_NGX_Result(NR_NGX_MSABI*)(ID3D12GraphicsCommandList*, const NVSDK_NGX_Handle*,
+                                                       NVSDK_NGX_Parameter*, void*);
+PFN_XemfgEvaluate real_xemfg_evaluate;
+NVSDK_NGX_Result NR_NGX_MSABI xemfg_evaluate(ID3D12GraphicsCommandList* list, const NVSDK_NGX_Handle* handle,
+                                             NVSDK_NGX_Parameter* params, void* callback) {
+    const auto result = real_xemfg_evaluate(list, handle, params, callback);
+    if (result == NVSDK_NGX_Result_Success && handle && params) {
+        unsigned enabled = 1, generated = 1;
+        params->Get("DLSSG.EnableInterp", &enabled);
+        params->Get("DLSSG.MultiFrameCount", &generated);
+        // This replacement defaults to one generated frame and clamps its supported range to 1..5.
+        generated = std::clamp(generated, 1u, 5u);
+        nr::pe::control::presentation_facts().provider(nr::control::FgSource::XeSSMFG, handle->Id,
+                                                      enabled != 0, generated + 1, GetTickCount64());
+        static std::atomic<unsigned> previous{~0u};
+        const unsigned state = enabled ? generated + 1 : 0;
+        if (previous.exchange(state) != state)
+            log("[nr] NR Control: XeSS MFG XMX successful NGX evaluate, interpolation %s, requested multiplier %ux",
+                enabled ? "on" : "off", state);
+    }
+    return result;
+}
+
 using PFN_XefgTag = int32_t (*)(void*, ID3D12CommandList*, uint32_t, const XefgResource*);
 PFN_XefgTag real_xefg_tag;
 int32_t xefg_tag(void* sc, ID3D12CommandList* list, uint32_t id, const XefgResource* r) {
@@ -849,8 +896,13 @@ bool hook_export(HMODULE m, const char* name, void* detour, void** real) {
 }
 // The frame-generation libraries as they come (looked for once a second of Presents): each hooked once.
 void fg_hook_libraries() {
-    if (g.presents - gf.looked < 60 && gf.looked) return;
-    gf.looked = g.presents;
+    static std::mutex poll_mutex;
+    std::unique_lock<std::mutex> lock(poll_mutex, std::try_to_lock);
+    if (!lock.owns_lock()) return;
+    static ULONGLONG looked = 0;
+    const ULONGLONG now = GetTickCount64();
+    if (looked && now - looked < 1000) return;
+    looked = now;
     MH_Initialize();
     static const wchar_t* const ffx[3] = {L"amd_fidelityfx_dx12.dll", L"amd_fidelityfx_loader_dx12.dll",
                                           L"amd_fidelityfx_framegeneration_dx12.dll"};
@@ -862,9 +914,17 @@ void fg_hook_libraries() {
                 if (hook_export(m, "ffxConfigure", ffx_detour[i], reinterpret_cast<void**>(&real_ffx_configure[i])))
                     log("[nr] HUD FIX (frame generation): %ls's ffxConfigure followed", ffx[i]);
             }
+    if (!gf.hooked_xemfg)
+        if (HMODULE m = GetModuleHandleW(L"dlssg_to_xefg_intel_is_better.dll")) {
+            gf.hooked_xemfg = hook_export(m, "NVSDK_NGX_D3D12_EvaluateFeature", as(&xemfg_evaluate),
+                                         reinterpret_cast<void**>(&real_xemfg_evaluate));
+            if (gf.hooked_xemfg) log("[nr] NR Control: XeSS MFG XMX NGX provider status followed");
+        }
     if (!gf.hooked_xefg)
         if (HMODULE m = GetModuleHandleW(L"libxess_fg.dll")) {
             gf.hooked_xefg = true;
+            if (hook_export(m, "xefgSwapChainGetLastPresentStatus", as(&xefg_status), reinterpret_cast<void**>(&real_xefg_status)))
+                log("[nr] NR Control: XeSS frame generation present status followed");
             if (hook_export(m, "xefgSwapChainD3D12TagFrameResource", as(&xefg_tag), reinterpret_cast<void**>(&real_xefg_tag)))
                 log("[nr] HUD FIX (frame generation): libxess_fg.dll's resource tags followed");
         }
@@ -941,6 +1001,8 @@ void store_backs(IDXGISwapChain* sc) {
     }
 }
 }  // namespace
+
+void poll_frame_generation() { fg_hook_libraries(); }
 
 void d3d12_backs(IDXGISwapChain* sc) {
     if (sc && g.armed.load()) store_backs(sc);

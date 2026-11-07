@@ -184,8 +184,9 @@ struct Input {
         }
         if (open && down(0x1B) && !was(0x1B) && !io.WantTextInput && !taking) open = false;   // Esc
         s->menu_open = open ? 1 : 0;
-        // the game hid its cursor (mouse look): the menu draws one
-        io.MouseDrawCursor = open && !s->cursor_shown;
+        // Wine's CURSOR_SHOWING flag does not establish that a compositor displays the pointer.
+        // Draw it with the overlay on every presented frame; window_proc hides the native client cursor.
+        io.MouseDrawCursor = open;
         if (open) {
             const float sx = s->client_w ? float(width) / float(s->client_w) : 1.f;
             const float sy = s->client_h ? float(height) / float(s->client_h) : 1.f;
@@ -849,14 +850,10 @@ struct Menu {
                              "\"Neural Rendering\" ([RenoDX] NeuralUplift).");
     }
     // The render size and the upscaler's output as NR last saw them (0: not known)
-    static void upscaling(const nr::control::Shared* s, uint32_t* rw, uint32_t* rh, uint32_t* ow, uint32_t* oh) {
-        *rw = *rh = *ow = *oh = 0;
-        if (!s || !s->route || !s->width) return;
-        const bool before = s->placement == 2 ||
-                            (s->placement == 0 && s->render_width == s->width && s->render_height == s->height);
-        *rw = s->render_width; *rh = s->render_height;
-        *ow = s->output_width ? s->output_width : before ? 0u : s->width;
-        *oh = s->output_width ? s->output_height : before ? 0u : s->height;
+    nr::control::PresentationSnapshot presentation;
+    void upscaling(const nr::control::Shared*, uint32_t* rw, uint32_t* rh, uint32_t* ow, uint32_t* oh) {
+        *rw = presentation.extent.render_w; *rh = presentation.extent.render_h;
+        *ow = presentation.extent.output_w; *oh = presentation.extent.output_h;
     }
 
     // The sidebar: the pages, and below them what runs in a few words
@@ -899,12 +896,12 @@ struct Menu {
         if (rw && ow && (rw != ow || rh != oh)) std::snprintf(t, sizeof t, "%.2fx", double(oh) / double(std::max(rh, 1u)));
         else if (rw && ow) std::snprintf(t, sizeof t, "%s", tr("none"));
         rows.push_back({NR_N("SR"), t, rw && ow && (rw != ow || rh != oh)});
-        double ratio = 0.0;
-        if (s)
-            if (const char* f = std::strstr(s->frame_gen, "Frame generation: "))
-                std::sscanf(f + 18, "%lf presents per game frame", &ratio);
-        std::snprintf(t, sizeof t, "%.0fx", ratio);
-        rows.push_back({NR_N("FG"), ratio >= 1.8 ? t : tr("Off"), ratio >= 1.8});
+        const auto fg = presentation.fg;
+        if (fg.state == nr::control::FgState::On && fg.multiplier >= 1.3)
+            std::snprintf(t, sizeof t, "%.1fx", fg.multiplier);
+        else std::snprintf(t, sizeof t, "%s", tr(fg.state == nr::control::FgState::On ? NR_N("On") :
+                                                fg.state == nr::control::FgState::Off ? NR_N("Off") : NR_N("Unknown")));
+        rows.push_back({NR_N("FG"), t, fg.state == nr::control::FgState::On});
         const bool on = s && s->route && nr::dlssnr::nr_on_now();
         int layers_on = 0;
         if (s) for (const auto& l : s->layers) if (l.number && l.state && l.state != 3) ++layers_on;
@@ -915,6 +912,7 @@ struct Menu {
     }
 
     void draw() {
+        presentation = nr::pe::control::presentation_facts().snapshot(GetTickCount64());
         const nr::control::Shared* s = shared();
         nr::control_ui::check_letters();   // a language whose letters the font lacks: English
         draw_header(s);
@@ -1010,7 +1008,13 @@ struct Menu {
         if (rw && ow && (rw != ow || rh != oh)) std::snprintf(sizes, sizeof sizes, tr("    Upscaling %ux%u -> %ux%u"), rw, rh, ow, oh);
         else if (rw && ow) std::snprintf(sizes, sizeof sizes, tr("    No upscaling: %ux%u"), ow, oh);
         ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled("%s%s", nr::control_ui::cost_text(s).c_str(), sizes);
+        ImGui::TextDisabled("%s", nr::control_ui::cost_text(s).c_str());
+        // A timing value appearing/disappearing must not move the resolution on alternating FG frames.
+        char cost_width[96];
+        std::snprintf(cost_width, sizeof cost_width, tr("NR: net %.2fms / proc %.2fms"), 999.99, 999.99);
+        const float size_column = ImGui::GetStyle().WindowPadding.x + ImGui::CalcTextSize(cost_width).x;
+        ImGui::SameLine(size_column);
+        ImGui::TextDisabled("%s", sizes);
         const float bw = ImGui::CalcTextSize(tr("Close")).x + 2 * ImGui::GetStyle().FramePadding.x;
         ImGui::SameLine(std::max(0.f, ImGui::GetWindowWidth() - bw - ImGui::GetStyle().WindowPadding.x));
         if (ImGui::Button(tr("Close"))) g_input.close();

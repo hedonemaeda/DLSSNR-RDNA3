@@ -21,6 +21,10 @@
 
 namespace nr::asi::hudcap {
 
+// Menu telemetry must follow FG providers even when no HUD FIX/Present NR layer is armed.
+// Cheap, throttled and safe when different presentation threads call it concurrently.
+void poll_frame_generation();
+
 // The game's swap chain was made on `device` (its back buffers' views and the pipelines made from now on are followed
 // once the capture is armed; `armed_now`: [HudFix] Mode is Auto or Captured already - the device's hooks go in at once).
 void d3d12_device(ID3D12Device* device, bool armed_now);
