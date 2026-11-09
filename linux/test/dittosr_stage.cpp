@@ -13,7 +13,7 @@
 
 static void ck(VkResult r) { if (r) throw std::runtime_error("Vulkan failure " + std::to_string(r)); }
 static bool ditto_ran = false;
-static void log_sink(const char* s) { puts(s); ditto_ran |= std::strstr(s, "[nr] Ditto SR: NR output") != nullptr; }
+static void log_sink(const char* s) { puts(s); ditto_ran |= std::strstr(s, "[nr] Ditto SR: neural") != nullptr; }
 struct Test {
     nr::HostDevice host;
     VkCommandPool pool{};
@@ -105,6 +105,87 @@ struct Test {
         }
         vkUnmapMemory(host.device,m);vkDestroyBuffer(host.device,buf,nullptr);vkFreeMemory(host.device,m,nullptr);return out;
     }
+    void upload_checker(Image im) {
+        std::vector<_Float16> values(im.w*im.h*4);
+        for(uint32_t y=0;y<im.h;++y) for(uint32_t x=0;x<im.w;++x) {
+            const size_t k=(size_t(y)*im.w+x)*4;
+            const float v=(x+y)%2?.75f:.25f;
+            values[k]=values[k+1]=values[k+2]=_Float16(v); values[k+3]=_Float16(1.f);
+        }
+        const size_t bytes=values.size()*sizeof(_Float16);
+        VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};bi.size=bytes;bi.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        VkBuffer buf;ck(vkCreateBuffer(host.device,&bi,nullptr,&buf));
+        VkMemoryRequirements r;vkGetBufferMemoryRequirements(host.device,buf,&r);
+        VkMemoryAllocateInfo ai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};ai.allocationSize=r.size;
+        ai.memoryTypeIndex=memory_type(r.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        VkDeviceMemory memory;ck(vkAllocateMemory(host.device,&ai,nullptr,&memory));ck(vkBindBufferMemory(host.device,buf,memory,0));
+        void* mapped;ck(vkMapMemory(host.device,memory,0,bytes,0,&mapped));memcpy(mapped,values.data(),bytes);vkUnmapMemory(host.device,memory);
+        begin();barrier();VkBufferImageCopy copy{};copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};copy.imageExtent={im.w,im.h,1};
+        vkCmdCopyBufferToImage(cmd,buf,im.im,VK_IMAGE_LAYOUT_GENERAL,1,&copy);barrier();end();
+        vkDestroyBuffer(host.device,buf,nullptr);vkFreeMemory(host.device,memory,nullptr);
+    }
+    void composition_detail(const char* shaders) {
+        const uint32_t w=96,h=64;
+        nr::renodx::StageConfig c{};c.shaders=shaders;c.width=w;c.height=h;c.nr_width=w/2;c.nr_height=h/2;
+        c.hdr_flag=true;c.frame_format=VK_FORMAT_R16G16B16A16_SFLOAT;
+        c.settings.resolution_scale=.5f;c.settings.look_upsample=4;
+        begin();auto color=image(w,h,c.frame_format),out=image(w,h,c.frame_format);
+        auto depth=image(w,h,VK_FORMAT_D32_SFLOAT),mv=image(w,h,VK_FORMAT_R32G32_SFLOAT);
+        clear(depth,.5f,0,0);clear(mv,0,0,0);clear(out,0,0,0);barrier();end();upload_checker(color);
+        nr::renodx::Stage stage(host,c);nr::renodx::StageFrame fr{};
+        fr.colour=frame(color);fr.output=frame(out);fr.depth=frame(depth);fr.motion=frame(mv);
+        fr.after_upscale=false;fr.jitter_known=true;fr.render_width=w;fr.render_height=h;
+        fr.motion_scale_x=1.f/w;fr.motion_scale_y=1.f/h;fr.depth_inverted=true;fr.reset=true;
+        begin();stage.record(cmd,fr,[&](uint32_t,const nr::ColourFrame& proxy,const nr::ColourFrame& neural,bool) {
+            barrier();VkImageCopy copy{};copy.srcSubresource=copy.dstSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};
+            copy.extent={proxy.width,proxy.height,1};vkCmdCopyImage(cmd,proxy.image,VK_IMAGE_LAYOUT_GENERAL,neural.image,VK_IMAGE_LAYOUT_GENERAL,1,&copy);barrier();
+        });end();
+        auto result=read(out),reference=read(color);float error=0.f,light=0.f,dark=0.f;
+        for(uint32_t y=4;y<h-4;++y) for(uint32_t x=4;x<w-4;++x) {
+            const size_t k=(size_t(y)*w+x)*4;error=std::max(error,std::abs(result[k]-reference[k]));
+            if((x+y)%2) light+=result[k];else dark+=result[k];
+        }
+        const float contrast=(light-dark)/float((w-8)*(h-8)/2);
+        printf("Full-reference composition: max-error=%g contrast=%g (identity network)\n",error,contrast);fflush(stdout);
+        assert(error<.02f && contrast>.4f);
+    }
+    void composition_controls(const char* shaders) {
+        const uint32_t w=96,h=64;
+        nr::renodx::StageConfig c{};c.shaders=shaders;c.width=w;c.height=h;c.nr_width=w/2;c.nr_height=h/2;
+        c.hdr_flag=true;c.frame_format=VK_FORMAT_R16G16B16A16_SFLOAT;c.settings.resolution_scale=.5f;c.settings.look_upsample=4;
+        begin();auto color=image(w,h,c.frame_format),out=image(w,h,c.frame_format);
+        auto depth=image(w,h,VK_FORMAT_D32_SFLOAT),mv=image(w,h,VK_FORMAT_R32G32_SFLOAT);
+        clear(color,.25f,.5f,.75f);clear(depth,.5f,0,0);clear(mv,.5f,-.25f,0);clear(out,0,0,0);barrier();end();
+        nr::renodx::StageFrame fr{};fr.colour=frame(color);fr.output=frame(out);fr.depth=frame(depth);fr.motion=frame(mv);
+        fr.after_upscale=false;fr.jitter_known=true;fr.render_width=w;fr.render_height=h;
+        fr.motion_scale_x=1.f/w;fr.motion_scale_y=1.f/h;fr.depth_inverted=true;
+        unsigned calls=0;
+        auto network=[&](uint32_t pass,const nr::ColourFrame&,const nr::ColourFrame& neural,bool) {
+            ++calls;barrier();const VkClearColorValue v=pass==0?VkClearColorValue{{.7f,.25f,.4f,1.f}}:VkClearColorValue{{.2f,.6f,.8f,1.f}};
+            const VkImageSubresourceRange r{VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
+            vkCmdClearColorImage(cmd,neural.image,VK_IMAGE_LAYOUT_GENERAL,&v,1,&r);barrier();
+        };
+        nr::renodx::Stage one(host,c);
+        fr.reset=true;begin();one.record(cmd,fr,network);end();auto full=read(out),original=read(color);
+        c.settings.color_strength=.5f;one.set(c.settings);begin();one.record(cmd,fr,network);end();auto half=read(out);
+        float blend_error=0.f,effect=0.f;
+        for(size_t k=0;k<full.size();++k) if(k%4!=3) {
+            blend_error=std::max(blend_error,std::abs(half[k]-(full[k]+original[k])*.5f));
+            effect=std::max(effect,std::abs(full[k]-original[k]));
+        }
+        printf("Composition strength: half-blend-error=%g full-effect=%g\n",blend_error,effect);fflush(stdout);
+        assert(effect>.05f && blend_error<.004f);
+        c.settings.color_strength=0.f;one.set(c.settings);calls=0;begin();one.record(cmd,fr,network);end();
+        assert(calls==0);auto zero=read(out);for(size_t k=0;k<zero.size();++k) assert(zero[k]==original[k]);
+        c.settings.color_strength=1.f;c.settings.passes=2;
+        nr::renodx::Stage two(host,c);calls=0;begin();two.record(cmd,fr,network);end();auto first=read(out);
+        fr.reset=false;
+        for(unsigned k=0;k<6;++k) { begin();two.record(cmd,fr,network);end(); }
+        auto settled=read(out);float drift=0.f;
+        for(size_t k=0;k<first.size();++k) drift=std::max(drift,std::abs(first[k]-settled[k]));
+        printf("Independent pass histories: drift=%g, network-calls=%u\n",drift,calls);fflush(stdout);
+        assert(calls==14 && drift<.004f);
+    }
     void test(const char* shaders,bool hdr,uint32_t w,uint32_t h,float scale,uint32_t passes,bool prep, bool bypass_last = false, bool srgb = false) {
         nr::renodx::StageConfig c{};c.shaders=shaders;c.width=w;c.height=h;c.hdr_flag=hdr;
         c.settings.resolution_scale=scale;c.settings.look_upsample=4;c.settings.passes=passes;
@@ -142,13 +223,16 @@ struct Test {
 };
 int main(int argc,char** argv) {
     if(argc!=2) { puts("usage: dittosr-stage <renodx shader directory>");return 2; }
-    float prev[2]={};DittoConstants k{};
-    nr::ditto::keep_output_phase(k,.3f,-.2f,1280,720,false,true,prev);
-    assert(k.jit[0]==0 && k.jitCancel[0]==0);
-    nr::ditto::keep_output_phase(k,-.3f,.2f,1280,720,false,false,prev);
-    assert(std::abs(k.jitCancel[0]+.6f/1280)<1e-9f);
-    nr::ditto::keep_output_phase(k,.3f,-.2f,1280,720,true,false,prev);
-    assert(k.jitCancel[0]==0 && k.jitCancel[1]==0);
+    float previous[2]={};DittoConstants k{};
+    auto f=nr::ditto::neural_frame(422,238,1280,720,1280,720,.3f,-.2f,false,true);
+    ditto_fill_constants(k,DittoSettings{},f,true,false,false,false,previous);
+    assert(std::abs(k.jit[0]-.3f*422/1280)<1e-8f && std::abs(k.jit[1]+.2f*238/720)<1e-8f);
+    assert(k.hdr==0.f && k.preExposure==1.f && k.mvScale[0]==1.f && k.mvScale[1]==1.f);
+    f=nr::ditto::neural_frame(422,238,1280,720,1280,720,-.3f,.2f,true,true);
+    ditto_fill_constants(k,DittoSettings{},f,false,false,false,false,previous);
+    assert(std::abs(k.jitCancel[0]-.6f/1280)<1e-9f && std::abs(k.jitCancel[1]+.4f/720)<1e-9f);
+    auto phase=nr::ditto::output_phase(.3f,-.2f,1280,720,1280,720);
+    assert(std::abs(phase[0]-.3f)<1e-8f && std::abs(phase[1]+.2f)<1e-8f);
     nr::renodx::Settings settings;settings.resolution_scale=.33f;uint32_t w,h;
     nr::renodx::working_resolution(settings,1280,720,1280,720,&w,&h);assert(w==422 && h==238);
     nr::set_log_sink(log_sink);Test t;
@@ -159,5 +243,7 @@ int main(int argc,char** argv) {
     t.test(argv[1],true,99,65,.5f,2,false,true);
     t.test(argv[1],true,96,64,1.f,1,false);
     t.test(argv[1],false,96,64,.33f,1,false,false,true);
+    t.composition_detail(argv[1]);
+    t.composition_controls(argv[1]);
     puts("Ditto SR integration contracts passed");
 }

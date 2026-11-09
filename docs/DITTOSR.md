@@ -4,98 +4,114 @@ Implementation base: `188324b759e9d34d4bed7361946bf034d69db0b9`
 (the RDNA3 0.0.8.3 port with the NR Control cursor/FG fixes).
 DittoSR reference: release `v0.4.0`, commit
 `d37519ce85a84a4cc3083cad17a83335bee0f6d4`.
+Neural transport correction base: `47f325e9cb17b08eee075e77697031b4c9d89e66`.
+The acceptance matrix was committed before the correction in `2973d57`.
 
-## Neural transport correction
+## Feature and acceptance matrix
 
-Correction base: `47f325e9cb17b08eee075e77697031b4c9d89e66`.
-The owner reports that the trial shows the neural image instead of preserving
-NR's full-resolution proxy/reference composition. The decoded-frame Ditto path
-below describes the first trial and is being replaced.
-
-| Area | Corrected contract | Required evidence |
+| Area | Contract | Evidence |
 | --- | --- | --- |
-| Neural transport | NR neural (after optional look shaping) -> Ditto SR -> up_neural; retain up_proxy and the normal full-resolution resolve | A high-frequency reference with an identity NR network must retain its detail; test must fail on the old decoded-frame path |
-| Composition | Normal HDR/SDR decode, transfer/color controls, Preprocess and final commit receive up_proxy/up_neural at 100% extent | Nonidentity network and composition-strength regression; unchanged default shaders |
-| Temporal inputs | Real scaled game jitter in Ditto constants; normalized game motion and depth with guide subrects | Constant/phase assertions and software Vulkan validation |
-| Output phase | Align Ditto's reconstructed up_neural with up_proxy and the next SR's input jitter | Explicit output rephase; incoming NGX parameters unchanged |
-| Multiple passes | Every active model pass uses its own Ditto temporal history | Distinct per-pass neural images must not contaminate one another |
-| Distribution | A new public trial update with source and checksums; prior download remains a historical trial | Build, package audit and public download hash check; AMD/game checks remain unrun |
-
-## First-trial feature and acceptance matrix
-
-| Area | Intended behavior | Verification |
-| --- | --- | --- |
-| NR Control | Add Ditto SR to the existing Upsampling selection; persist per layer as NRLookUpsample=4 | PASS: PE compilation and generated INI; target menu trial unrun |
-| Before SR | Resolve NR at its working extent, then run Ditto SR to the layer's 100% extent; leave OptiScaler's next SR stage and dimensions intact | PASS: dimension/phase fixture and software Vulkan; target FSR 4 chain unrun |
-| Example | 1280x720 at 0.33 rounds to 422x238; NR -> Ditto SR -> 1280x720 -> OptiScaler SR -> 1920x1080 | PASS: 422x238 rounding assertion |
-| Temporal inputs | Use the game's depth, motion and jitter, mapped to NR's grid; keep each layer's history separate | PASS: compilation, phase fixture, software resets; target motion trial unrun |
-| Scope | Linux/Proton NR Control, RenoDX processing, Before SR only; explain unavailable conditions | PASS: build and explicit layer error path; target UI trial unrun |
-| Lifecycle | Reset on mode/settings changes, cuts and resize; retire GPU resources using existing completion tracking | PASS: reset, switches, subrects and 72-frame ring reuse with validation |
-| Existing behavior | Keep default modes, NR network kernels, weights, RDNA4 defaults and Windows sources unchanged | PASS: 29/29 RenoDX SPIR-V EXACT; protected source unchanged |
-| Distribution | Ship all needed shaders and MIT/BSD notices; no NVIDIA DLL/model/weights | PASS: 15-file update audit and license checks |
+| NR Control | Upsampling: Ditto SR; persist per layer as NRLookUpsample=4 | Existing PE/INI checks; target menu trial pending |
+| Neural transport | NR neural after optional look shaping -> Ditto SR -> up_neural; retain up_proxy and the normal full-resolution resolve | Identity-network detail test fails on old path (contrast 0), passes on correction (0.498413 of original 0.5) |
+| Composition | Existing HDR/SDR decoders, color/transfer controls, Preprocess and final commit receive the full-size proxy/neural images | Software Vulkan: nonidentity HDR half-strength blend error 0.000152588; zero-strength bypass exact |
+| Temporal inputs | Actual game jitter scaled to NR pixels; normalized game motion and foreground depth from guide subrects | Constant assertions, D32/subrect cases and Vulkan validation; game motion quality pending |
+| Output phase | Rephase Ditto's reconstructed up_neural to match up_proxy and the next SR's input jitter | Explicit phase shader and assertions; original NGX parameters unchanged |
+| Multiple passes | Every active model pass owns independent Ditto temporal history | Two distinct neural images over seven frames: 14 network calls, output drift 0.000976562 |
+| Resolution | 1280x720 at 0.33 -> 422x238 NR -> 1280x720 composed output -> OptiScaler SR -> 1920x1080 | Rounding and output-extent checks; target FSR 4 chain pending |
+| Scope | Linux/Proton RenoDX layers, Before SR only; full scale uses ordinary NR | Software SDR/HDR 33%/50%/100%; unsupported conditions reported by layer |
+| Lifecycle | Invalidate on cuts, resize, mode/settings changes, bypass; retire resources using existing GPU completion tracking | Software reset, switches, inactive pass and 72-frame ring reuse checks |
+| Existing behavior | No learned network, weights, planner, golden or Windows changes; no RenoDX shader arithmetic changes | Protected-source diff and 29 original SPIR-V comparisons |
+| Distribution | New trial ASI plus all five Ditto shaders, MIT/BSD notices, no NVIDIA/model files | Package audit and download receipt below; old prepare shader explicitly rejected |
 
 ## Use
 
-Install the update's ASI into `OptiScaler/plugins/` and its five SPIR-V files
-into the game's `dlssnr-amd/shaders/renodx/`, with their notices. Keep the
-existing NR models, other shaders, OptiScaler and FG provider. Back up the ASI
-and shader folder before replacing them. The update's README gives the paths.
+This is an update for an existing RDNA3 0.0.8.3 port installation. Exit the game
+and back up the ASI and shader folder outside the game directory. Copy the
+archive's `OptiScaler` and `dlssnr-amd` folders into the game directory, merging
+with the installed folders. Replace **both the ASI and all five Ditto shaders**:
+the correction changes the prepare shader's push-constant layout. A new ASI
+with an old prepare shader reports a mismatch instead of silently using it.
+Keep the existing models, other NR shaders, OptiScaler and FG provider.
 
 In NR Control, choose a RenoDX layer, **Placement: Before the upscaler**,
 **Resolution scale: 0.33**, **Upsampling: Ditto SR**. Disable **Follow render
 resolution**, which otherwise overrides the scale. Keep FSR 4 (or another SR)
-selected in OptiScaler. At 100%, the normal NR path runs with no Ditto dispatch.
-An unsupported placement or unavailable guides/jitter is reported as a layer
-error; the chosen setting is kept. This integration is in the Linux/Proton tree.
+selected in OptiScaler. At 100%, the ordinary NR path runs without Ditto.
+Unsupported placement or unavailable guides/jitter is reported as a layer
+error; the selected setting is retained.
 
-## Temporal contract
+## Composition and temporal contract
 
-The final active model pass resolves into a decoded image at NR's resolution.
-Ditto's convert, motion, upscale and sharpening passes reconstruct that image
-to the layer's original extent. SDR uses the legacy decoder and optional black
-restore; HDR uses the v6 resolve into linear colour, followed by the usual HDR
-commit. Earlier model passes retain their existing codec processing.
+Each active model pass encodes the running reference into `proxy`, runs NR into
+`neural`, and optionally shapes that neural image. The existing edge-aware
+transport builds `up_proxy` at the layer's original extent. Ditto reconstructs
+only the neural image into `up_neural`. The normal full-resolution codec resolve
+then receives both images and the full-resolution running reference. HDR uses
+its existing ratio resolve; SDR retains its legacy decoder and black restore.
+Preprocess, pass strengths and the normal commit remain in the same path.
+Ditto's intermediate image is never copied directly to the game output.
 
-The reference and guides honor their extents and guide subrect origins. Guide
-preparation keeps foreground depth and the matching motion; motion is in
-normalized screen units. Raw depth views use the depth aspect. The preparation
-shader uses RGBA32F motion storage so it introduces no requirement for the
-optional StorageImageExtendedFormats capability.
+The existing transport still computes its ordinary edge-aware `up_neural`,
+which Ditto overwrites before resolve. This retains the existing `up_proxy`
+arithmetic and avoids changing RenoDX shaders, at the cost of redundant work.
+No performance improvement is claimed for this integration.
 
-Both the reduced input and the enlarged output retain the game's jitter in
-normalized screen coordinates. Ditto's **relative** sample jitter is zero;
-history reprojection includes the phase difference between game frames (already
-present when NGX declares jittered vectors). This keeps the downstream SR's
-input consistent with the original jitter parameters without changing the
-game's NGX block. Standalone Ditto's de-jittered output would not meet that
-contract. This adaptation still needs assessment in a real cascaded SR run.
+Ditto receives encoded neural RGB, with its HDR flag off and exposure factors
+at one. The codec already owns the game's HDR/exposure mapping. Applying that
+mapping again inside Ditto would distort the encoded neural values.
 
-Each layer owns its Ditto history. Reset/cuts, stage resize, NR off/on,
-preprocessing, settings affecting reconstruction and mode changes invalidate
-it. Unselected Ditto images retire under the stage's existing GPU completion
-tracking. Guide views and descriptor pools use that same recording lifetime;
-constants are uploaded with recorded Vulkan commands and explicit barriers.
+Guide preparation honors depth/motion extents and subrect origins, chooses
+foreground depth and matching motion, and expresses motion in normalized screen
+units. Depth views use the depth aspect. RGBA32F motion storage avoids adding
+a StorageImageExtendedFormats requirement. Each pass receives the actual game
+jitter scaled from render pixels into NR pixels. Ditto's ordinary jittered-vector
+cancellation removes jitter carried by motion vectors before stable history
+reprojection; nonjittered vectors need no cancellation.
+
+Ditto reconstructs onto a stable grid. The final prepare dispatch samples this
+result at pixel minus the game jitter expressed in full-output pixels. That
+puts `up_neural` on the current sample phase of `up_proxy` and the next SR.
+The game's incoming NGX jitter and motion parameters remain unchanged.
+Actual cascaded SR quality still requires a game trial.
+
+Each model pass owns separate MDA, auxiliary and reconstruction histories,
+including its previous jitter. Reset/cuts, resize, NR bypass, inactive passes,
+preprocessing and reconstruction settings invalidate the relevant histories.
+New history texels are initialized, and unselected resources retire under the
+stage's existing GPU completion tracking. Guide views and descriptor pools use
+that same recording lifetime. Constants use recorded uploads and barriers.
+
+The corrected transport also exposed an existing host descriptor issue: when
+look temporal filtering was off, its declared UINT history slots were bound to
+a FLOAT placeholder. The host now binds typed RG32_UINT/R32_UINT placeholders.
+This is a common runtime binding fix, separate from learned network arithmetic.
+No RenoDX shader source was changed for it.
 
 ## Checks on homeserver
 
-Completed with worktree-local dependencies from `bash fetch_deps.sh` and
-`bash linux/build/bootstrap_ubuntu_tools.sh`:
+Dependencies were installed locally with `bash fetch_deps.sh` and
+`bash linux/build/bootstrap_ubuntu_tools.sh`.
 
-- The native integration fixture executes real codec/Ditto shaders with a
-  deterministic identity network under llvmpipe. SDR/HDR, 33%/50%/100%, odd
-  extents, guide subrects, true D32 depth, multiple model passes, an inactive
-  final pass, Preprocess, temporal look, history-ring reuse, sRGB transfer,
-  resets and live
-  mode changes are covered. The test does not load any model weights.
-- The phase fixture checks jittered and unjittered vector contracts and the
-  1280x720 at 0.33 -> 422x238 rounding.
-- All five new SPIR-V files pass `spirv-val --target-env vulkan1.1`.
-- Original RenoDX SPIR-V files compare **EXACT (29/29)** before and after.
-  Ditto's five vendored HLSL files match its pinned upstream source unchanged.
-- `check_paths.sh`, `check_imgui.sh` and the existing NR Control presentation
-  fixture pass. Network source, planner, goldens and Windows source are unchanged.
-  Existing modes keep their original raw copy into compatible sRGB outputs;
-  Ditto converts through an internal UNORM twin before that copy.
+The native fixture runs real codec/Ditto shaders under llvmpipe with synthetic
+identity and nonidentity networks, without model weights. Seven existing cases
+cover SDR/HDR, 33%/50%/100%, odd extents, guide subrects, true D32 depth, multiple
+passes, an inactive final pass, Preprocess, temporal look, history-ring reuse,
+sRGB transfer, resets and live mode changes. Added composition cases check
+full-reference detail, half/zero strength, and independent pass histories.
+The corrected run has zero API or synchronization validation errors.
+
+The detail regression was run against the old decoded-frame path before the
+correction: max error 0.250732, contrast 0, assertion failure. The corrected path
+has max error 0.00244141 and contrast 0.498413. These synthetic image checks
+establish the composition wiring, not NR network quality or game performance.
+Logs: `artifacts/test-transport-before.log`, `artifacts/test-transport-after.log`.
+
+Additional checks cover real jitter constants, jittered-vector cancellation,
+output phase and 422x238 rounding. A new binary paired with the previously
+published prepare shader is rejected with the expected mismatch message.
+`check_paths.sh`, `check_imgui.sh` and the NR Control presentation fixture pass.
+All five Ditto shaders are validated with `spirv-val --target-env vulkan1.1`;
+original RenoDX shaders and pinned Ditto vendor sources are compared separately.
 
 Run the fixture with a Vulkan driver available:
 
@@ -110,42 +126,34 @@ NR_GPU=rdna3 bash linux/build/build_asi.sh
 bash linux/build/package_dittosr_update.sh
 ```
 
-For the software run, Mesa 25.2.8's llvmpipe and validation layers were downloaded
-and extracted inside `toolchain/vulkan-test/`, without changing the system.
-`VK_DRIVER_FILES`, `LD_LIBRARY_PATH` and `VK_LAYER_PATH` select those local files.
-`VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation` and
+Software Vulkan uses locally extracted Mesa 25.2.8 and validation layers in
+`toolchain/vulkan-test/`. `VK_DRIVER_FILES`, `LD_LIBRARY_PATH` and `VK_LAYER_PATH`
+select those files. `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation` and
 `VK_LAYER_ENABLES=VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT`
-enable API and synchronization checks. `NR_RENODX_ROBUST=1` disables the existing
-RenoDX pipeline-robustness override: the fixture's device does not enable that
-optional feature. This test exercises the new passes without that dependency.
+enable API and synchronization validation. `NR_RENODX_ROBUST=1` disables the
+existing pipeline-robustness override because the fixture's device does not
+enable that optional feature. System drivers and services were not changed.
 
 ## Target acceptance still required
 
 AMD GPU image quality, frame times and game/FSR 4 compatibility are **unrun**.
 The reported target is Z1 Extreme / Dragon's Dogma 2 / DX12 / Proton CachyOS /
-Mesa 26.2.5; see NR-CONTROL-FIX.md. Software Vulkan establishes wiring and API
-contracts only. It does not establish numerical correctness of an NR network,
-its speed or the quality of two temporal upscalers in a game.
+Mesa 26.2.5; see NR-CONTROL-FIX.md. Software Vulkan tests the host wiring and
+API contracts. It cannot qualify two temporal upscalers in an actual game.
 
-After installing the update:
+1. Start with FG off, 1280x720 SR input and 1920x1080 display. Select the settings
+   above. The log must contain `Ditto SR: neural 422x238 -> up_neural 1280x720; resolve with up_proxy`.
+2. Compare Classic/Ditto at 0.33, 0.5 and 1; vary color/transfer strengths. Check
+   still detail, pans, foliage, hair, moving silhouettes, particles, cuts and
+   dark/bright menus. Check SDR/HDR when available. At 1 Ditto should not run.
+3. Change scale, mode, layer/pass count and window size; disable/re-enable NR.
+   Check recovery and history resets. Enable FG and exercise its multipliers.
+4. Try After SR/Present, check the placement error, then restore Before SR.
+   Record logs, screenshots and repeated per-frame GPU timings at fixed clocks.
 
-1. Start with FG off. Set the game's/SR input to 1280x720 and display to
-   1920x1080, then select the settings above. The log must contain
-   `Ditto SR: NR output 422x238 -> 1280x720 before OptiScaler SR`.
-2. Compare Upsampling Classic/Ditto SR at 0.33, 0.5 and 1. Inspect still detail,
-   pans, foliage, hair, motion silhouettes, particles, cuts and dark/bright menus.
-   Check SDR and HDR if available. At 1 no Ditto enlargement should run.
-3. Switch mode, disable/re-enable NR, change scale, resize and change layer
-   count. Check that no stale history, flicker or allocation failure persists.
-4. Enable the existing FG provider and exercise its multipliers. The Ditto
-   Before SR layer must run on game evaluations, and preserve NR Control's
-   pointer, FG status and resolution display fixes.
-5. Try After SR/Present and verify the explicit placement error. Restore Before
-   SR and verify it recovers. Record the log, screenshots and per-frame GPU
-   timings over repeated runs at the same clocks.
-
-The existing RDNA3 network checks remain available, using locally extracted
-weights and the target AMD GPU; do not update their goldens for this feature:
+Learned kernels, planner, weights and goldens are unchanged. The existing target
+RDNA3 checks remain available with locally extracted models; do not update their
+goldens for this feature:
 
 ```sh
 python3 linux/test/check_rdna3.py --model /path/to/CC_SILVER_AARDWOLD.bin
@@ -153,30 +161,14 @@ python3 linux/test/check_rdna3_small.py --model /path/to/CC_SMALL_FP8.bin
 python3 linux/test/check_rdna3_int4.py --model /path/to/CC_SILVER_AARDWOLD.bin
 ```
 
-## Delivered build
+## Historical first trial
 
-- Source: `30a4d3ed250a6877988f0311ea3a7ea7561a0711`, branch `feat/nr-control-dittosr`, pushed to the owner's origin.
-- Worktree: `/home/gedomada/projects/dlssnr-rdna3-dittosr`; the main checkout is unchanged.
-- Version: `0.0.8.3-74-g30a4d3e`. Full `NR_GPU=rdna3` ASI build completed with exit 0 from this clean commit.
-- Archive: `/home/gedomada/projects/dlssnr-rdna3-dittosr/artifacts/dittosr-update/NR-Control-DittoSR-0.0.8.3-74-g30a4d3e-x86_64-rdna3.tar.gz` (2,975,584 bytes), with an adjacent `.sha256` file.
-- Archive SHA-256: `0216046e3b79be3ed2320f0fe409108454546bc4c6ece1c1d0b4e69d4634dddb`.
-- ASI: 8,233,167 bytes; SHA-256 `3f55b932a023f4f823211192e5b2e08b2924fc6f2980261c573874d39e0d1cf4`.
-- Seven software Vulkan cases pass with zero API or synchronization validation errors.
-- PE inspection: AMD64, zero timestamp, InitializeASI exported, no Vulkan-loader or dynamic pthread import.
-- Package audit: 15 files, including exactly five compiled Ditto shaders and the required notices; no models or NVIDIA DLLs.
-- Repeating the normalized archive build gives identical bytes; packaged shaders match the validated SPIR-V.
-- Logs: `artifacts/build-asi-release.log`, `artifacts/dittosr-validation.log`, `artifacts/package-release.log`; metadata: `artifacts/dittosr-delivery.json`.
-- Published at the owner's request as a trial prerelease, without main-branch integration or latest-release promotion. GPU/game qualification remains pending as described above.
-
-## Public download
-
-The owner requested a download usable from another device. The trial prerelease
-[`trial-nr-control-dittosr-30a4d3e`](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/tag/trial-nr-control-dittosr-30a4d3e) points to the exact build source above.
-
-- [NR-Control-DittoSR-0.0.8.3-74-g30a4d3e-x86_64-rdna3.tar.gz](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/download/trial-nr-control-dittosr-30a4d3e/NR-Control-DittoSR-0.0.8.3-74-g30a4d3e-x86_64-rdna3.tar.gz)
-- [NR-Control-DittoSR-0.0.8.3-74-g30a4d3e-x86_64-rdna3.tar.gz.sha256](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/download/trial-nr-control-dittosr-30a4d3e/NR-Control-DittoSR-0.0.8.3-74-g30a4d3e-x86_64-rdna3.tar.gz.sha256)
-
-Both assets were downloaded again without authentication after publication.
-The archive matches the local SHA-256 above. The release tag does not start
-with `v`, so it does not trigger package/release CI. The archive is an update
-for an existing RDNA3 0.0.8.3 port installation, not a standalone game installer.
+The original decoded-frame implementation is superseded by the neural-transport
+correction. Its source was `30a4d3ed250a6877988f0311ea3a7ea7561a0711`, version
+`0.0.8.3-74-g30a4d3e`, published as
+[`trial-nr-control-dittosr-30a4d3e`](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/tag/trial-nr-control-dittosr-30a4d3e).
+The historical archive SHA-256 is
+`0216046e3b79be3ed2320f0fe409108454546bc4c6ece1c1d0b4e69d4634dddb`.
+Its seven original software cases did not detect the composition regression;
+the new high-frequency reference case does. Historical assets are retained,
+with their original source and hashes, rather than replaced in place.
