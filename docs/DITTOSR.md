@@ -5,7 +5,23 @@ Implementation base: `188324b759e9d34d4bed7361946bf034d69db0b9`
 DittoSR reference: release `v0.4.0`, commit
 `d37519ce85a84a4cc3083cad17a83335bee0f6d4`.
 
-## Feature and acceptance matrix
+## Neural transport correction
+
+Correction base: `47f325e9cb17b08eee075e77697031b4c9d89e66`.
+The owner reports that the trial shows the neural image instead of preserving
+NR's full-resolution proxy/reference composition. The decoded-frame Ditto path
+below describes the first trial and is being replaced.
+
+| Area | Corrected contract | Required evidence |
+| --- | --- | --- |
+| Neural transport | NR neural (after optional look shaping) -> Ditto SR -> up_neural; retain up_proxy and the normal full-resolution resolve | A high-frequency reference with an identity NR network must retain its detail; test must fail on the old decoded-frame path |
+| Composition | Normal HDR/SDR decode, transfer/color controls, Preprocess and final commit receive up_proxy/up_neural at 100% extent | Nonidentity network and composition-strength regression; unchanged default shaders |
+| Temporal inputs | Real scaled game jitter in Ditto constants; normalized game motion and depth with guide subrects | Constant/phase assertions and software Vulkan validation |
+| Output phase | Align Ditto's reconstructed up_neural with up_proxy and the next SR's input jitter | Explicit output rephase; incoming NGX parameters unchanged |
+| Multiple passes | Every active model pass uses its own Ditto temporal history | Distinct per-pass neural images must not contaminate one another |
+| Distribution | A new public trial update with source and checksums; prior download remains a historical trial | Build, package audit and public download hash check; AMD/game checks remain unrun |
+
+## First-trial feature and acceptance matrix
 
 | Area | Intended behavior | Verification |
 | --- | --- | --- |
