@@ -150,4 +150,17 @@ python3 linux/test/check_rdna3_int4.py --model /path/to/CC_SILVER_AARDWOLD.bin
 - Package audit: 15 files, including exactly five compiled Ditto shaders and the required notices; no models or NVIDIA DLLs.
 - Repeating the normalized archive build gives identical bytes; packaged shaders match the validated SPIR-V.
 - Logs: `artifacts/build-asi-release.log`, `artifacts/dittosr-validation.log`, `artifacts/package-release.log`; metadata: `artifacts/dittosr-delivery.json`.
-- No release tag or main-branch integration was made. GPU/game qualification remains pending as described above.
+- Published at the owner's request as a trial prerelease, without main-branch integration or latest-release promotion. GPU/game qualification remains pending as described above.
+
+## Public download
+
+The owner requested a download usable from another device. The trial prerelease
+[`trial-nr-control-dittosr-30a4d3e`](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/tag/trial-nr-control-dittosr-30a4d3e) points to the exact build source above.
+
+- [NR-Control-DittoSR-0.0.8.3-74-g30a4d3e-x86_64-rdna3.tar.gz](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/download/trial-nr-control-dittosr-30a4d3e/NR-Control-DittoSR-0.0.8.3-74-g30a4d3e-x86_64-rdna3.tar.gz)
+- [NR-Control-DittoSR-0.0.8.3-74-g30a4d3e-x86_64-rdna3.tar.gz.sha256](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/download/trial-nr-control-dittosr-30a4d3e/NR-Control-DittoSR-0.0.8.3-74-g30a4d3e-x86_64-rdna3.tar.gz.sha256)
+
+Both assets were downloaded again without authentication after publication.
+The archive matches the local SHA-256 above. The release tag does not start
+with `v`, so it does not trigger package/release CI. The archive is an update
+for an existing RDNA3 0.0.8.3 port installation, not a standalone game installer.
