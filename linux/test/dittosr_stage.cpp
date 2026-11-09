@@ -66,7 +66,7 @@ struct Test {
         VkImageCreateInfo i{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO}; i.imageType=VK_IMAGE_TYPE_2D;i.format=f;i.extent={w,h,1};i.mipLevels=i.arrayLayers=1;
         i.samples=VK_SAMPLE_COUNT_1_BIT;i.tiling=VK_IMAGE_TILING_OPTIMAL;
         i.usage=VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-        if(f!=VK_FORMAT_D32_SFLOAT) i.usage|=VK_IMAGE_USAGE_STORAGE_BIT;
+        if(f!=VK_FORMAT_D32_SFLOAT && f!=VK_FORMAT_R8G8B8A8_SRGB) i.usage|=VK_IMAGE_USAGE_STORAGE_BIT;
         ck(vkCreateImage(host.device,&i,nullptr,&out.im));
         VkMemoryRequirements r{}; vkGetImageMemoryRequirements(host.device,out.im,&r);
         VkMemoryAllocateInfo a{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};a.allocationSize=r.size;a.memoryTypeIndex=memory_type(r.memoryTypeBits,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -86,7 +86,7 @@ struct Test {
         f.before=f.after=VK_IMAGE_LAYOUT_GENERAL; f.before_stage=f.after_stage=VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
         f.before_access=f.after_access=VK_ACCESS_MEMORY_READ_BIT|VK_ACCESS_MEMORY_WRITE_BIT;
         f.usage=VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-        if(i.format!=VK_FORMAT_D32_SFLOAT) f.usage|=VK_IMAGE_USAGE_STORAGE_BIT;
+        if(i.format!=VK_FORMAT_D32_SFLOAT && i.format!=VK_FORMAT_R8G8B8A8_SRGB) f.usage|=VK_IMAGE_USAGE_STORAGE_BIT;
         return f;
     }
     std::vector<float> read(Image im) {
@@ -105,13 +105,13 @@ struct Test {
         }
         vkUnmapMemory(host.device,m);vkDestroyBuffer(host.device,buf,nullptr);vkFreeMemory(host.device,m,nullptr);return out;
     }
-    void test(const char* shaders,bool hdr,uint32_t w,uint32_t h,float scale,uint32_t passes,bool prep, bool bypass_last = false) {
+    void test(const char* shaders,bool hdr,uint32_t w,uint32_t h,float scale,uint32_t passes,bool prep, bool bypass_last = false, bool srgb = false) {
         nr::renodx::StageConfig c{};c.shaders=shaders;c.width=w;c.height=h;c.hdr_flag=hdr;
         c.settings.resolution_scale=scale;c.settings.look_upsample=4;c.settings.passes=passes;
         if(prep) { c.settings.look_mode=true;c.settings.look_stabilize=2;c.settings.detail_stability=2; }
         if(bypass_last) c.settings.pass_transfer[passes-2]=c.settings.pass_color[passes-2]=0.f;
         nr::renodx::working_resolution(c.settings,w,h,w,h,&c.nr_width,&c.nr_height);
-        c.frame_format=hdr?VK_FORMAT_R16G16B16A16_SFLOAT:VK_FORMAT_R8G8B8A8_UNORM;
+        c.frame_format=hdr?VK_FORMAT_R16G16B16A16_SFLOAT:srgb?VK_FORMAT_R8G8B8A8_SRGB:VK_FORMAT_R8G8B8A8_UNORM;
         begin();auto color=image(w,h,c.frame_format), output=image(w,h,c.frame_format);
         auto depth=image(w+8,h+8,VK_FORMAT_D32_SFLOAT), mv=image(w+16,h+16,VK_FORMAT_R32G32_SFLOAT);
         clear(color,.25f,.5f,.75f);clear(output,0,0,0);clear(depth,.5f,0,0);clear(mv,0,0,0);barrier();end();
@@ -132,7 +132,7 @@ struct Test {
             begin();if(k==3) { barrier();clear(color,.75f,.25f,.5f);barrier(); }
             stage.record(cmd,fr,identity);end(); }
         assert(ditto_ran==(scale<1.f));
-        auto out=read(output);float max_error=0;const float target[4]={.75f,.25f,.5f,1.f};
+        auto out=read(output);auto target=read(color);float max_error=0;
         for(size_t k=0;k<out.size();++k) { assert(std::isfinite(out[k])); max_error=std::max(max_error,std::abs(out[k]-target[k%4])); }
         printf("%s %ux%u NR %ux%u passes=%u prep=%d max-error=%g\n",hdr?"HDR":"SDR",w,h,c.nr_width,c.nr_height,passes,prep,max_error);
         assert(max_error<.02f);
@@ -158,5 +158,6 @@ int main(int argc,char** argv) {
     t.test(argv[1],false,99,65,.5f,2,false);
     t.test(argv[1],true,99,65,.5f,2,false,true);
     t.test(argv[1],true,96,64,1.f,1,false);
+    t.test(argv[1],false,96,64,.33f,1,false,false,true);
     puts("Ditto SR integration contracts passed");
 }

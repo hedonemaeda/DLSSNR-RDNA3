@@ -68,7 +68,8 @@ Completed with worktree-local dependencies from `bash fetch_deps.sh` and
 - The native integration fixture executes real codec/Ditto shaders with a
   deterministic identity network under llvmpipe. SDR/HDR, 33%/50%/100%, odd
   extents, guide subrects, true D32 depth, multiple model passes, an inactive
-  final pass, Preprocess, temporal look, history-ring reuse, resets and live
+  final pass, Preprocess, temporal look, history-ring reuse, sRGB transfer,
+  resets and live
   mode changes are covered. The test does not load any model weights.
 - The phase fixture checks jittered and unjittered vector contracts and the
   1280x720 at 0.33 -> 422x238 rounding.
@@ -77,6 +78,8 @@ Completed with worktree-local dependencies from `bash fetch_deps.sh` and
   Ditto's five vendored HLSL files match its pinned upstream source unchanged.
 - `check_paths.sh`, `check_imgui.sh` and the existing NR Control presentation
   fixture pass. Network source, planner, goldens and Windows source are unchanged.
+  Existing modes keep their original raw copy into compatible sRGB outputs;
+  Ditto converts through an internal UNORM twin before that copy.
 
 Run the fixture with a Vulkan driver available:
 

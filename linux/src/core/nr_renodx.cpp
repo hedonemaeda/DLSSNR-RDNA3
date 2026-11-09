@@ -2161,6 +2161,21 @@ uint32_t Stage::record(VkCommandBuffer cmd, const StageFrame& fr, const Network&
     } else {
         result = ditto ? &m.ditto_result : &m.stack_out(uint32_t(executed));
     }
+    if (ditto && !m.hdr && m.decoded_storage && unorm_twin(fr.output.format) != fr.output.format) {
+        // RenoDX treats an sRGB frame as raw SDR values. Convert into its UNORM twin first, then copy bits:
+        // a direct float-to-sRGB blit would apply a second transfer function to those values.
+        Impl::memory_barrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT);
+        VkImageBlit b{};
+        b.srcSubresource = b.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        b.srcOffsets[1] = b.dstOffsets[1] = {int32_t(W), int32_t(H), 1};
+        if (!nrvk::blit(m.physical, m.device, cmd, result->handle, result->format, VK_IMAGE_LAYOUT_GENERAL,
+                        m.decoded.handle, m.decoded.format, VK_IMAGE_LAYOUT_GENERAL, 1, &b, VK_FILTER_NEAREST))
+            throw std::runtime_error("Ditto SR: cannot convert the SDR result");
+        Impl::memory_barrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_WRITE_BIT,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT);
+        result = &m.decoded;
+    }
     // NR Control's debug view of this layer ([Inspect] DebugView), over what goes to the frame
     if (s.debug_view >= 1u && s.debug_view <= 3u) {
         const uint32_t dv[5] = {W, H, NW, NH, s.debug_view};
@@ -2181,7 +2196,7 @@ uint32_t Stage::record(VkCommandBuffer cmd, const StageFrame& fr, const Network&
     Impl::image_barrier(cmd, fr.output.image, fr.output.before, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                         fr.output.before_stage, fr.output.before_access, VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_ACCESS_TRANSFER_WRITE_BIT);
-    if (result->format == fr.output.format) {
+    if (m.decoded_storage && (!ditto || m.hdr || result->format == unorm_twin(fr.output.format))) {
         VkImageCopy out{};
         out.srcSubresource = out.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         out.extent = {W, H, 1};
