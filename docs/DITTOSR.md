@@ -161,6 +161,24 @@ python3 linux/test/check_rdna3_small.py --model /path/to/CC_SMALL_FP8.bin
 python3 linux/test/check_rdna3_int4.py --model /path/to/CC_SILVER_AARDWOLD.bin
 ```
 
+## Corrected build and public download
+
+[Download 0.0.8.3-78-ge486f8a](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/download/trial-nr-control-dittosr-transport-e486f8a/NR-Control-DittoSR-0.0.8.3-78-ge486f8a-x86_64-rdna3.tar.gz)
+([SHA-256 file](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/download/trial-nr-control-dittosr-transport-e486f8a/NR-Control-DittoSR-0.0.8.3-78-ge486f8a-x86_64-rdna3.tar.gz.sha256)).
+[Trial release](https://github.com/hedonemaeda/DLSSNR-RDNA3/releases/tag/trial-nr-control-dittosr-transport-e486f8a).
+
+- Build source: `e486f8a37726d66c99472e21b956ad52644f39df`, branch `feat/nr-control-dittosr`, pushed to origin.
+- Full `NR_GPU=rdna3` ASI build completed with exit 0 from the clean source commit.
+- Archive: `NR-Control-DittoSR-0.0.8.3-78-ge486f8a-x86_64-rdna3.tar.gz`, 2,975,503 bytes; SHA-256 `04c2e8fc05985e9a81b965e5d4c123d7f73e5f4a020cf2eeb2bb374e472f89db`.
+- ASI: 8,230,273 bytes; SHA-256 `6406e8bea9f2c4b431ae3bfb70c6d39b30fe8e2474752fa789efec318dfaf897`.
+- PE: AMD64, zero timestamp, InitializeASI exported; no Vulkan-loader or dynamic pthread import.
+- Package audit: 15 files, exactly five Ditto shaders and required notices, no models/NVIDIA DLLs. Packaged shaders match the validated fixture binaries.
+- Independent normalized package builds produce identical bytes. Both public assets were downloaded without authentication and match the local files.
+- Published as a new trial prerelease, with the tag pointing to the exact build source. Latest-release state is unchanged; the old trial now links to this correction.
+- Local archive: `/home/gedomada/projects/dlssnr-rdna3-dittosr/artifacts/dittosr-transport-update/NR-Control-DittoSR-0.0.8.3-78-ge486f8a-x86_64-rdna3.tar.gz`. This path belongs to the separate homeserver worktree; use the public download from other devices.
+- Build/package logs: `artifacts/build-asi-transport.log`, `artifacts/package-transport.log`; receipt: `artifacts/dittosr-transport-delivery.json`.
+- The main checkout remains unchanged. AMD GPU/game acceptance is pending as described above.
+
 ## Historical first trial
 
 The original decoded-frame implementation is superseded by the neural-transport
