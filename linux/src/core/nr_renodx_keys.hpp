@@ -66,7 +66,7 @@ inline constexpr Key kKeys[] = {
     {"NRDetailStability", kUint, 0, 0.0f, 2.0f, 1.0f, "Composition", "Detail stability", "NRDetailStability. NR's change smoothed over frames.", "Auto\0Off\0Always\0"},
     {"NRResolutionScale", kFloat, 2, 0.33f, 1.0f, 1.0f, "Resolution", "Resolution scale", "NRResolutionScale. The network below the frame, 0.33-1.", nullptr},
     {"NRFollowInputRes", kBool, 0, 0.0f, 0.0f, 0.0f, "Resolution", "Follow render resolution", "NRFollowInputRes. The network at the motion vectors' resolution.", nullptr},
-    {"NRLookUpsample", kUint, 0, 0.0f, 3.0f, 0.0f, "Resolution", "Upsampling", "NRLookUpsample. How NR's change reaches the frame below 1.", "Auto\0Edge-aware\0Classic\0Area input\0"},
+    {"NRLookUpsample", kUint, 0, 0.0f, 4.0f, 0.0f, "Resolution", "Upsampling", "NRLookUpsample. Ditto SR reconstructs NR output to 100% before the upscaler. Requires Before SR, game depth, motion and jitter.", "Auto\0Edge-aware\0Classic\0Area input\0Ditto SR\0"},
     {"NRLookMode", kBool, 0, 0.0f, 0.0f, 0.0f, "Adjust NR's look", "Adjust NR's look", "NRLookMode. Reshapes NR's result live; off leaves it as it is.", nullptr},
     {"NRLookStrength", kFloat, 2, 0.0f, 2.0f, 1.0f, "Adjust NR's look", "Edit strength", "NRLookStrength.", nullptr},
     {"NRLookBrighten", kFloat, 2, 0.0f, 2.0f, 1.0f, "Adjust NR's look", "Brightening", "NRLookBrighten.", nullptr},

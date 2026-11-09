@@ -15,6 +15,7 @@
 #include "nr_log.hpp"
 #include "nr_vram_tag.hpp"
 #include "renodx/codec_gain.hpp"
+#include "nr_dittosr_phase.hpp"
 
 #include <algorithm>
 #include <array>
@@ -480,6 +481,7 @@ std::vector<uint32_t> read_spirv(const std::string& path) {
 // StorageBuffer variable's (Preprocess's state).
 std::map<uint32_t, VkDescriptorType> reflect(const std::vector<uint32_t>& code) {
     std::map<uint32_t, uint32_t> binding_of, pointee, image_sampled;
+    std::set<uint32_t> samplers;
     std::vector<std::pair<uint32_t, uint32_t>> variables;   // (pointer type, id)
     std::vector<uint32_t> buffers;
     std::vector<std::pair<uint32_t, uint32_t>> uniforms;    // (pointer type, id)
@@ -491,6 +493,7 @@ std::map<uint32_t, VkDescriptorType> reflect(const std::vector<uint32_t>& code) 
         if (op == 71 && len >= 4 && w[2] == 33) binding_of[w[1]] = w[3];            // OpDecorate Binding
         else if (op == 71 && len >= 3 && w[2] == 3) buffer_blocks.insert(w[1]);      // OpDecorate BufferBlock
         else if (op == 32 && len >= 4) pointee[w[1]] = w[3];                         // OpTypePointer
+        else if (op == 26 && len >= 2) samplers.insert(w[1]);
         else if (op == 25 && len >= 9) image_sampled[w[1]] = w[7];                   // OpTypeImage
         else if (op == 59 && len >= 4 && w[3] == 0) variables.push_back({w[1], w[2]}); // OpVariable UniformConstant
         else if (op == 59 && len >= 4 && w[3] == 12) buffers.push_back(w[2]);           // OpVariable StorageBuffer
@@ -500,11 +503,12 @@ std::map<uint32_t, VkDescriptorType> reflect(const std::vector<uint32_t>& code) 
     // Slang's glsl_460 storage buffers: Uniform variables of a BufferBlock struct.
     for (const auto& [ptr, id] : uniforms) {
         const auto t = pointee.find(ptr);
-        if (t == pointee.end() || !buffer_blocks.count(t->second))
-            throw std::runtime_error("RenoDX stage: a uniform buffer");
-        buffers.push_back(id);
+        if (t != pointee.end() && buffer_blocks.count(t->second)) buffers.push_back(id);
     }
     std::map<uint32_t, VkDescriptorType> out;
+    for (const auto& [ptr, id] : uniforms)
+        if (binding_of.count(id) && !buffer_blocks.count(pointee[ptr]))
+            out[binding_of[id]] = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     for (uint32_t id : buffers) {
         const auto b = binding_of.find(id);
         if (b != binding_of.end()) out[b->second] = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -513,6 +517,7 @@ std::map<uint32_t, VkDescriptorType> reflect(const std::vector<uint32_t>& code) 
         const auto b = binding_of.find(id);
         const auto t = pointee.find(ptr);
         if (b == binding_of.end() || t == pointee.end()) continue;
+        if (samplers.count(t->second)) { out[b->second] = VK_DESCRIPTOR_TYPE_SAMPLER; continue; }
         const auto s = image_sampled.find(t->second);
         if (s == image_sampled.end()) throw std::runtime_error("RenoDX stage: a non-image resource");
         out[b->second] = s->second == 1 ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
@@ -552,8 +557,17 @@ struct Stage::Impl {
              kDecodeReduceL,   // legacy_decode + the black-level reduce in one pass (the SDR frame in place)
              kComposeDecode,   // look_compose + legacy_decode + the reduce (SDR, the network at the frame's extent)
              kStFbIn, kStPrep, kStBox, kStApply,
+             kDittoPrepare, kDittoConvert, kDittoMotion, kDittoUpscale, kDittoSharpen,
              kCount };
     Program programs[kCount];
+    VkSampler ditto_sampler{};
+    VkBuffer ditto_constants{};
+    VkDeviceMemory ditto_constants_memory{};
+    Image ditto_reference, ditto_input, ditto_depth, ditto_motion, ditto_result, ditto_change;
+    Image ditto_mda[2], ditto_history[2], ditto_aux[2];
+    uint32_t ditto_cur = 0;
+    bool ditto_valid = false, ditto_logged = false;
+    float ditto_previous_jitter[2] = {};
 
     // The stack's ping-pong: HDR resolves pass k into work_a / work_b (k even / odd), SDR decodes into
     // decoded / decoded_alt. The second of each is made when a stack first needs it.
@@ -675,9 +689,9 @@ struct Stage::Impl {
         check(vkAllocateMemory(device, &ai, nullptr, &m), "memory");
         return m;
     }
-    void make_buffer(VkDeviceSize size, VkBuffer* buffer, VkDeviceMemory* memory) {
+    void make_buffer(VkDeviceSize size, VkBuffer* buffer, VkDeviceMemory* memory, VkBufferUsageFlags extra = 0) {
         VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        bi.size = size; bi.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        bi.size = size; bi.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | extra;
         check(vkCreateBuffer(device, &bi, nullptr, buffer), "buffer");
         VkMemoryRequirements req{}; vkGetBufferMemoryRequirements(device, *buffer, &req);
         *memory = allocate(req, "a buffer");
@@ -703,14 +717,15 @@ struct Stage::Impl {
         p.bindings = reflect(code);
         p.push_bytes = push_bytes;
         std::vector<VkDescriptorSetLayoutBinding> lb;
-        for (const auto& [b, t] : p.bindings) lb.push_back({b, t, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
+        for (const auto& [b, t] : p.bindings)
+            lb.push_back({b, t, 1, VK_SHADER_STAGE_COMPUTE_BIT, t == VK_DESCRIPTOR_TYPE_SAMPLER ? &ditto_sampler : nullptr});
         VkDescriptorSetLayoutCreateInfo li{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
         li.bindingCount = uint32_t(lb.size()); li.pBindings = lb.data();
         check(vkCreateDescriptorSetLayout(device, &li, nullptr, &p.dsl), "set layout");
         VkPushConstantRange pr{VK_SHADER_STAGE_COMPUTE_BIT, 0, push_bytes};
         VkPipelineLayoutCreateInfo pli{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         pli.setLayoutCount = 1; pli.pSetLayouts = &p.dsl;
-        pli.pushConstantRangeCount = 1; pli.pPushConstantRanges = &pr;
+        pli.pushConstantRangeCount = push_bytes ? 1 : 0; pli.pPushConstantRanges = push_bytes ? &pr : nullptr;
         check(vkCreatePipelineLayout(device, &pli, nullptr, &p.layout), "pipeline layout");
         VkShaderModuleCreateInfo si{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
         si.codeSize = code.size() * 4; si.pCode = code.data();
@@ -740,7 +755,8 @@ struct Stage::Impl {
         bi.reserve(p.bindings.size());
         std::vector<VkWriteDescriptorSet> w;
         for (const auto& [b, t] : p.bindings) {
-            if (t == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) {
+            if (t == VK_DESCRIPTOR_TYPE_SAMPLER) continue; // immutable sampler in the layout
+            if (t == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER || t == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
                 const auto buf = buffers.find(b);
                 if (buf == buffers.end()) throw std::runtime_error("RenoDX stage: buffer binding " + std::to_string(b) + " not given");
                 bi.push_back({buf->second, 0, VK_WHOLE_SIZE});
@@ -787,7 +803,7 @@ struct Stage::Impl {
     // and the sets naming them (the linearize's, the commit's, each pass's compose) are this recording's only - a
     // game's image handle can come back for another image once the game frees it - and are freed once the frames in
     // flight are past them, as the retired images are.
-    struct Borrow { nr::gpu::Ticket gpu; VkImageView in{}, out{}, motion{}; VkDescriptorPool pool{}; };
+    struct Borrow { nr::gpu::Ticket gpu; VkImageView in{}, out{}, motion{}, ditto_depth{}, ditto_motion{}; VkDescriptorPool pool{}; };
     std::vector<Borrow> borrows;
     bool in_place_logged = false, motion_logged = false;
     Borrow& borrow_slot() {
@@ -797,14 +813,18 @@ struct Stage::Impl {
         if (b.in) vkDestroyImageView(device, b.in, nullptr);
         if (b.out) vkDestroyImageView(device, b.out, nullptr);
         if (b.motion) vkDestroyImageView(device, b.motion, nullptr);
-        b.in = b.out = b.motion = VK_NULL_HANDLE;
+        if (b.ditto_depth) vkDestroyImageView(device, b.ditto_depth, nullptr);
+        if (b.ditto_motion) vkDestroyImageView(device, b.ditto_motion, nullptr);
+        b.in = b.out = b.motion = b.ditto_depth = b.ditto_motion = VK_NULL_HANDLE;
         if (!b.pool) {
             constexpr uint32_t kSets = 16 + 2 * kMaxUnlockedPasses;   // + the HDR frame-as-work0 sets
             VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 8 * kSets},
                                             {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 12 * kSets},
-                                            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 * kSets}};
+                                            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 * kSets},
+                                            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4 * kSets},
+                                            {VK_DESCRIPTOR_TYPE_SAMPLER, 4 * kSets}};
             VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-            pi.maxSets = kSets; pi.poolSizeCount = 3; pi.pPoolSizes = sizes;
+            pi.maxSets = kSets; pi.poolSizeCount = 5; pi.pPoolSizes = sizes;
             check(vkCreateDescriptorPool(device, &pi, nullptr, &b.pool), "descriptor pool");
         } else {
             vkResetDescriptorPool(device, b.pool, 0);
@@ -895,7 +915,7 @@ struct Stage::Impl {
         const Program& pr = programs[p];
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pr.pipeline);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pr.layout, 0, 1, &set, 0, nullptr);
-        vkCmdPushConstants(cmd, pr.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, std::min(bytes, pr.push_bytes), push);
+        if (pr.push_bytes) vkCmdPushConstants(cmd, pr.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, std::min(bytes, pr.push_bytes), push);
         vkCmdDispatch(cmd, x, y, 1);
         mark(cmd, pr.name);
         // Every dispatch's writes before whatever the next one reads (RenoDX orders them the same way,
@@ -997,6 +1017,8 @@ struct Stage::Impl {
         }
         return false;
     }
+
+#include "nr_dittosr_stage.inl"
 
     // RunLookStage for one pass: the bands, the temporal filter on the pass's own history and every gain into
     // look_out (N'), then, below the frame's extent, P_up and N'_up. Returns whether it shaped.
@@ -1168,10 +1190,11 @@ Stage::Stage(const HostDevice& host, const StageConfig& cfg) : impl_(std::make_u
     }
 
     VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 4096}, {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 4096},
-                                    {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 512}};
+                                    {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 512}, {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 512},
+                                    {VK_DESCRIPTOR_TYPE_SAMPLER, 512}};
     VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     dpi.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    dpi.maxSets = 512; dpi.poolSizeCount = 3; dpi.pPoolSizes = sizes;
+    dpi.maxSets = 512; dpi.poolSizeCount = 5; dpi.pPoolSizes = sizes;
     check(vkCreateDescriptorPool(m.device, &dpi, nullptr, &m.pool), "descriptor pool");
 
     const uint32_t v6 = sizeof(V6Constants), lg = sizeof(LegacyConstants);
@@ -1237,6 +1260,8 @@ Stage::~Stage() {
         if (b.in) vkDestroyImageView(m.device, b.in, nullptr);
         if (b.out) vkDestroyImageView(m.device, b.out, nullptr);
         if (b.motion) vkDestroyImageView(m.device, b.motion, nullptr);
+        if (b.ditto_depth) vkDestroyImageView(m.device, b.ditto_depth, nullptr);
+        if (b.ditto_motion) vkDestroyImageView(m.device, b.ditto_motion, nullptr);
         if (b.pool) vkDestroyDescriptorPool(m.device, b.pool, nullptr);
     }
     for (Image* im : {&m.original, &m.work0, &m.work_a, &m.work_b, &m.proxy, &m.neural, &m.look_out, &m.decoded,
@@ -1244,6 +1269,11 @@ Stage::~Stage() {
                       &m.up_neural, &m.band_a, &m.band_b, &m.band_max_a, &m.band_max_b, &m.work_p, &m.prep_keep})
         m.destroy(*im);
     for (Image* im : {&m.st_fineh, &m.st_fbadd, &m.st_d0, &m.st_d1, &m.st_t0, &m.st_t1, &m.st_g0, &m.st_g1, &m.st_f0[0], &m.st_f0[1], &m.st_f1[0], &m.st_f1[1]}) m.destroy(*im);
+    for (Image* im : {&m.ditto_reference, &m.ditto_input, &m.ditto_depth, &m.ditto_motion, &m.ditto_result, &m.ditto_change,
+                      &m.ditto_mda[0], &m.ditto_mda[1], &m.ditto_history[0], &m.ditto_history[1], &m.ditto_aux[0], &m.ditto_aux[1]}) m.destroy(*im);
+    if (m.ditto_sampler) vkDestroySampler(m.device, m.ditto_sampler, nullptr);
+    if (m.ditto_constants) vkDestroyBuffer(m.device, m.ditto_constants, nullptr);
+    if (m.ditto_constants_memory) vkFreeMemory(m.device, m.ditto_constants_memory, nullptr);
     for (auto& pl : m.looks)
         for (int i = 0; i < 2; ++i) { m.destroy(pl.history[i]); m.destroy(pl.history_z[i]); }
     for (auto& r : m.retired) m.destroy(r.second);
@@ -1266,7 +1296,7 @@ namespace {
 // stage has; NRUnlockPasses (ours) as NRPasses.
 bool history_settings_differ(const Settings& a, const Settings& b) {
     auto same3 = [](const auto& x, const auto& y) { return x[0] == y[0] && x[1] == y[1] && x[2] == y[2]; };
-    return a.passes_mode != b.passes_mode || a.fast_method != b.fast_method ||
+    return (a.look_upsample != b.look_upsample && (a.look_upsample == 4u || b.look_upsample == 4u)) || a.passes_mode != b.passes_mode || a.fast_method != b.fast_method ||
            std::memcmp(a.fast_passes, b.fast_passes, sizeof a.fast_passes) != 0 ||
            std::memcmp(a.fast_halo_limit, b.fast_halo_limit, sizeof a.fast_halo_limit) != 0 ||
            std::memcmp(a.fast_fine, b.fast_fine, sizeof a.fast_fine) != 0 ||
@@ -1293,6 +1323,18 @@ bool recreate_settings_differ(const Settings& a, const Settings& b) {
 
 void Stage::set(const Settings& s) {
     Impl& m = *impl_;
+    if (m.settings.look_upsample == 4u || s.look_upsample == 4u) {
+        look::Frame f{};
+        f.nr_width = m.cfg.nr_width; f.nr_height = m.cfg.nr_height;
+        f.full_width = m.cfg.width; f.full_height = m.cfg.height; f.reference_linear = m.hdr != 0;
+        const auto a = look::make_constants(look::snapshot(m.settings, false), f);
+        const auto b = look::make_constants(look::snapshot(s, false), f);
+        if (std::memcmp(&a, &b, sizeof a) || m.settings.transfer_strength != s.transfer_strength ||
+            m.settings.color_strength != s.color_strength ||
+            std::memcmp(m.settings.pass_transfer, s.pass_transfer, sizeof s.pass_transfer) ||
+            std::memcmp(m.settings.pass_color, s.pass_color, sizeof s.pass_color))
+            m.ditto_valid = false;
+    }
     if (recreate_settings_differ(m.settings, s)) m.recreate = true;
     else if (history_settings_differ(m.settings, s)) m.history_reset = true;
     if (m.cfg.present) {   // the Present path's units are its colour space's
@@ -1337,10 +1379,26 @@ uint32_t Stage::record(VkCommandBuffer cmd, const StageFrame& fr, const Network&
     const uint32_t W = m.cfg.width, H = m.cfg.height, NW = m.cfg.nr_width, NH = m.cfg.nr_height;
     const uint32_t gx = (W + 15) / 16, gy = (H + 15) / 16, nx = (NW + 15) / 16, ny = (NH + 15) / 16;
     const uint32_t passes = stack_passes(s);
+    uint32_t ditto_pass = passes - 1;
+    if (m.hdr) while (ditto_pass > 0) {
+        float t, c; m.strengths(ditto_pass, &t, &c);
+        if (t > 0.f || c > 0.f) break;
+        --ditto_pass;
+    }
+    const bool ditto = s.look_upsample == 4u && !fr.after_upscale && !m.cfg.present &&
+                       (NW < W || NH < H) && fr.depth.image && fr.motion.image && fr.jitter_known &&
+                       fr.render_width && fr.render_height;
+    if (!ditto) {
+        m.ditto_valid = false;
+        for (Image* im : {&m.ditto_reference, &m.ditto_input, &m.ditto_depth, &m.ditto_motion, &m.ditto_result, &m.ditto_change,
+                          &m.ditto_mda[0], &m.ditto_mda[1], &m.ditto_history[0], &m.ditto_history[1], &m.ditto_aux[0], &m.ditto_aux[1]})
+            m.retire(*im);
+    }
 
     // The colour into the output as it is: NR off (NeuralUplift), or every pass at zero strength (RenoDX's explicit
     // bypass).
     if (!s.nr_enabled || (m.hdr && !m.chain_active(0, passes))) {
+        m.ditto_valid = false;
         if (fr.colour.image != fr.output.image) {
             Impl::image_barrier(cmd, fr.colour.image, fr.colour.before, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                 fr.colour.before_stage, fr.colour.before_access, VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -1489,8 +1547,8 @@ uint32_t Stage::record(VkCommandBuffer cmd, const StageFrame& fr, const Network&
     // decode, the decode (with the black-level reduce in the same pass) storing into the output. NR_RDX_SDR_INPLACE=0:
     // as before (copy in, decode, reduce, apply, copy out).
     static const bool sdr_inplace_off = [] { const char* e = std::getenv("NR_RDX_SDR_INPLACE"); return e && e[0] == '0'; }();
-    const bool sdr_inplace = !m.hdr && passes == 1 && !sdr_inplace_off;
-    if (m.hdr || sdr_inplace) {
+    const bool sdr_inplace = !ditto && !m.hdr && passes == 1 && !sdr_inplace_off;
+    if (!ditto && (m.hdr || sdr_inplace)) {
         const bool out_ok = m.decoded_storage && (fr.output.usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
                             fr.output.format == m.decoded.format && fr.output.width == W && fr.output.height == H;
         const bool in_ok = (!same || out_ok) && (fr.colour.usage & VK_IMAGE_USAGE_SAMPLED_BIT) &&
@@ -1552,7 +1610,7 @@ uint32_t Stage::record(VkCommandBuffer cmd, const StageFrame& fr, const Network&
     // The last pass's resolve and the commit in one dispatch when the commit takes no pedestal (v6_resolve_commit).
     // The recorded RDNA4 fixtures matched the two-dispatch output. NR_RENODX_FUSE=0 keeps the two for comparison.
     static const bool fuse_off = [] { const char* e = std::getenv("NR_RENODX_FUSE"); return e && e[0] == '0'; }();
-    const bool fuse = v6 && !fuse_off && !frame_pedestal_removal(s, m.hdr, m.units);
+    const bool fuse = !ditto && v6 && !fuse_off && !frame_pedestal_removal(s, m.hdr, m.units);
     bool fused = false;
     if (read_in_place) {
         Impl::image_barrier(cmd, fr.colour.image, fr.colour.before, VK_IMAGE_LAYOUT_GENERAL, fr.colour.before_stage,
@@ -1677,7 +1735,9 @@ uint32_t Stage::record(VkCommandBuffer cmd, const StageFrame& fr, const Network&
     // 3. The stack: each pass encodes the running image, runs the network on it, shapes its edit and resolves it
     // onto that image with its own strengths; the next pass takes the result.
     const bool have_motion = fr.motion.image && fr.motion.width && fr.motion.height;
-    const look::Settings ls = look::snapshot(s, fr.after_upscale && have_motion);
+    look::Settings ls = look::snapshot(s, fr.after_upscale && have_motion);
+    if (ditto) ls.upsample = look::kUpsampleClassic;
+    if (ditto) m.prepare_ditto(cmd, fr, borrow);
     bool motion_copied = false;
     // Read in place where the game's image stays in GENERAL and can be sampled (the compose reads it at the region's
     // base); else the vectors' region, copied to the origin of an image of its own (once a frame, every pass reads it).
@@ -1915,7 +1975,42 @@ uint32_t Stage::record(VkCommandBuffer cmd, const StageFrame& fr, const Network&
         const VkImageView rn = route.transport ? m.up_neural.view : route.shaped ? m.look_out.view : m.neural.view;
         const uint32_t pw = route.transport ? W : NW, ph = route.transport ? H : NH;
         // 3d. resolve onto the running image.
-        if (v6 && fuse && k + 1 == passes) {
+        if (ditto && k == ditto_pass) {
+            m.prepare_ditto_reference(cmd, fr, ref_view, borrow);
+            if (v6) {
+                const V6Constants res = make_v6(s, m.f6, NW, NH, NW, NH, NW, NH, NW, NH,
+                                                transfer, color, s.chroma_clamp_stops, m.ratio_resolve);
+                const Impl::P rv = prep_resolve ? Impl::kResolve6Prep : Impl::kResolve6;
+                const V6PrepConstants pres = prep_constants(res);
+                m.dispatch(cmd, rv, m.S(rv, {{0, m.ditto_reference.view}, {1, m.proxy.view}, {2, rn},
+                                             {3, m.scale_or_work0()}, {4, m.ditto_input.view}}),
+                           prep_resolve ? static_cast<const void*>(&pres) : &res,
+                           prep_resolve ? sizeof pres : sizeof res, nx, ny);
+            } else {
+                LegacyConstants c{};
+                c.size[0] = c.source_size[0] = c.proxy_size[0] = c.neural_size[0] = NW;
+                c.size[1] = c.source_size[1] = c.proxy_size[1] = c.neural_size[1] = NH;
+                c.paper_white_scale = s.paper_white_scale; c.transfer_strength = transfer;
+                c.color_strength = color; c.diffuse_white_nits = s.diffuse_white_nits;
+                m.dispatch(cmd, Impl::kDecodeL, m.S(Impl::kDecodeL,
+                           {{0, m.ditto_reference.view}, {1, m.proxy.view}, {2, rn},
+                            {3, m.ditto_reference.view}, {4, m.ditto_input.view}}), &c, sizeof c, nx, ny);
+            }
+            m.run_ditto(cmd, fr, reset_all, write);
+            if (!v6 && sdr_restore) {
+                LegacyConstants c{};
+                c.size[0] = c.source_size[0] = W; c.size[1] = c.source_size[1] = H;
+                c.proxy_size[0] = c.neural_size[0] = NW; c.proxy_size[1] = c.neural_size[1] = NH;
+                c.paper_white_scale = s.paper_white_scale; c.transfer_strength = transfer;
+                c.color_strength = color; c.diffuse_white_nits = s.diffuse_white_nits;
+                const std::map<uint32_t, VkImageView> views{{0, ref_view}, {1, m.proxy.view}, {2, m.neural.view},
+                    {3, ref_view}, {4, m.ditto_result.view}, {5, m.block_mean.view}};
+                m.dispatch(cmd, Impl::kReduceLUnshaped, SR(Impl::kReduceLUnshaped, views), &c, sizeof c,
+                           (W + 31) / 32, (H + 31) / 32);
+                c.padding[0] = s.sdr_black_restore == 1u ? 2.f : 0.061f; c.padding[1] = restore_mode;
+                m.dispatch(cmd, Impl::kApplyL, SR(Impl::kApplyL, views), &c, sizeof c, gx, gy);
+            }
+        } else if (v6 && fuse && k + 1 == passes) {
             const V6Constants res = make_v6(s, m.f6, W, H, W, H, pw, ph, pw, ph, transfer, color, s.chroma_clamp_stops,
                                             m.ratio_resolve);
             const std::map<uint32_t, VkImageView> fv{{0, ref.view}, {1, rp}, {2, rn}, {3, m.scale_or_work0()},
@@ -2064,7 +2159,7 @@ uint32_t Stage::record(VkCommandBuffer cmd, const StageFrame& fr, const Network&
         m.dispatch(cmd, commit, store_in_place ? m.set_for(m.programs[commit], cv, {}, borrow->pool) : m.S(commit, cv),
                    &com, sizeof com, gx, gy);
     } else {
-        result = &m.stack_out(uint32_t(executed));
+        result = ditto ? &m.ditto_result : &m.stack_out(uint32_t(executed));
     }
     // NR Control's debug view of this layer ([Inspect] DebugView), over what goes to the frame
     if (s.debug_view >= 1u && s.debug_view <= 3u) {
@@ -2086,7 +2181,7 @@ uint32_t Stage::record(VkCommandBuffer cmd, const StageFrame& fr, const Network&
     Impl::image_barrier(cmd, fr.output.image, fr.output.before, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                         fr.output.before_stage, fr.output.before_access, VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_ACCESS_TRANSFER_WRITE_BIT);
-    if (m.decoded_storage) {
+    if (result->format == fr.output.format) {
         VkImageCopy out{};
         out.srcSubresource = out.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         out.extent = {W, H, 1};

@@ -3724,6 +3724,20 @@ bool Session::Impl::neutral_motion(VkCommandBuffer cmd, uint32_t w, uint32_t h, 
 bool Session::Impl::record_renodx(VkCommandBuffer cmd, renodx::Stage& stage, const ColourFrame& colour,
                                   const ColourFrame& output, EngineFrame engine, const Controls& c,
                                   const Session::RenoDXFrame& rf, const ColourFrame* exposure) {
+    if (rf.settings.look_upsample == 4u) {
+        if (rf.present || rf.after_upscale) {
+            status = "Ditto SR requires Placement: Before the upscaler";
+            return false;
+        }
+        if (!(engine.depth.usage & VK_IMAGE_USAGE_SAMPLED_BIT) || !(engine.motion.usage & VK_IMAGE_USAGE_SAMPLED_BIT)) {
+            status = "Ditto SR needs shader-readable game depth and motion vectors";
+            return false;
+        }
+        if (!engine.depth.image || !engine.motion.image || !rf.jitter_known || !rf.render_width || !rf.render_height) {
+            status = "Ditto SR needs the game's depth, motion vectors and jitter";
+            return false;
+        }
+    }
     // The Present path without the game's motion vectors (NRPresentGuides Optional), or set to Never: neutral guides
     // for the network - zero motion, no depth - and none for the look (its Detail stability is the game's vectors').
     const bool neutral = rf.present && (rf.settings.present_guides == 2u || !engine.motion.image);
@@ -3746,6 +3760,10 @@ bool Session::Impl::record_renodx(VkCommandBuffer cmd, renodx::Stage& stage, con
     sf.motion_x = engine.motion_x; sf.motion_y = engine.motion_y;
     sf.motion_scale_x = engine.motion_scale_x; sf.motion_scale_y = engine.motion_scale_y;
     if (exposure) sf.exposure = *exposure;
+    sf.depth = engine.depth; sf.depth_x = engine.depth_x; sf.depth_y = engine.depth_y;
+    sf.jitter_x = rf.jitter_x; sf.jitter_y = rf.jitter_y;
+    sf.jitter_known = rf.jitter_known; sf.jittered_motion = rf.jittered_motion;
+    sf.render_width = rf.render_width; sf.render_height = rf.render_height;
     sf.pre_exposure = rf.pre_exposure;
     sf.exposure_scale = rf.exposure_scale;
     sf.auto_exposure = rf.auto_exposure;
@@ -3769,6 +3787,7 @@ bool Session::Impl::record_renodx(VkCommandBuffer cmd, renodx::Stage& stage, con
     // (the network's and the look's).
     if (rs.depth_mode == 1u) engine.depth_inverted = false;
     if (rs.depth_mode == 2u) engine.depth_inverted = true;
+    sf.depth_inverted = engine.depth_inverted;
     engine.motion_scale_x *= rs.mvec_scale_x;
     engine.motion_scale_y *= rs.mvec_scale_y;
     sf.motion_scale_x = engine.motion_scale_x; sf.motion_scale_y = engine.motion_scale_y;

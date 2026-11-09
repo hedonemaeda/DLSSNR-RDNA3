@@ -2137,6 +2137,12 @@ struct ChainEditor {
         } else {
             changed = draw_renodx(layer_values, route.renodx_route(row.placement), true, {},
                                   [](const char* name) { return !nr::ini_edit::chain_global(name); }, layer_motion);
+            if (layer_values.u(key_index("NRLookUpsample")) == 4u && row.placement != "before") {
+                ImGui::PushTextWrapPos(0.f);
+                ImGui::TextColored(ImVec4(1.f, .55f, .3f, 1.f), "%s",
+                                   tr("Ditto SR requires Placement: Before the upscaler"));
+                ImGui::PopTextWrapPos();
+            }
         }
         if (changed) {
             if (old_file) {

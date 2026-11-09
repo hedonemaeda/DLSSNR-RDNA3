@@ -668,7 +668,7 @@ bool parse_renodx_key(RenoDXConfig& r, const std::string& key, const std::string
     else if (key == "nrdetailstability") v.detail_stability = renodx_enum(value, d.detail_stability, 0, 2);
     else if (key == "nrresolutionscale") v.resolution_scale = renodx_float(value, d.resolution_scale, 0.33f, 1.0f);
     else if (key == "nrfollowinputres") { if (auto b = parse_bool(value)) v.follow_input_res = *b; }
-    else if (key == "nrlookupsample") v.look_upsample = renodx_enum(value, d.look_upsample, 0, 3);
+    else if (key == "nrlookupsample") v.look_upsample = renodx_enum(value, d.look_upsample, 0, 4);
     else if (key == "nrlookmode") { if (auto b = parse_bool(value)) v.look_mode = *b; }
     else if (key == "nrlookstrength") v.look_strength = renodx_float(value, d.look_strength, 0.0f, 2.0f);
     else if (key == "nrlookbrighten") v.look_brighten = renodx_float(value, d.look_brighten, 0.0f, 2.0f);
@@ -880,7 +880,7 @@ void write_renodx(FILE* f, const RenoDXConfig& r) {
         "\n"
         "NRLookUpsample = %u\n"
         "; with the network below the picture's resolution, how the change is enlarged back: 0 = auto (edge-aware, default); 1 = edge-aware; 2 = classic (plain enlargement);\n"
-        "; 3 = edge-aware, with SDR pictures reduced by area for the network (a change restarts the network's history)\n"
+        "; 3 = edge-aware, with SDR pictures reduced by area; 4 = Ditto SR on NR output, Before SR only, requires game depth/motion/jitter\n"
         "\n"
         "NRLookMode = %d\n"
         "; RenoDX's Adjust NR's look: adjusts how much NR changed, directly on its result; changes apply at once, the network does not restart.\n"

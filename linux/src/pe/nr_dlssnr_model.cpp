@@ -1398,6 +1398,9 @@ int evaluate_d3d12(ID3D12GraphicsCommandList* cmd, Feature* f, void* params, ID3
             rf.exposure = static_cast<ID3D12Resource*>(frame.exposure);
             rf.exposure_state = static_cast<D3D12_RESOURCE_STATES>(frame.exposure_state);
             rf.pre_exposure = frame.pre_exposure > 0.0f ? frame.pre_exposure : 1.0f;
+            rf.jitter_x = frame.jitter_x; rf.jitter_y = frame.jitter_y;
+            rf.jitter_known = frame.jitter_known; rf.jittered_motion = frame.jittered_motion;
+            rf.render_width = frame.render_width; rf.render_height = frame.render_height;
             rf.exposure_scale = frame.exposure_scale;
             rf.auto_exposure = frame.flags_known && (frame.create_flags & 0x40u) != 0;   // AutoExposure
             rf.create_flags_known = frame.flags_known;
@@ -1731,6 +1734,9 @@ int evaluate_vk(void* cmd_buffer, Feature* f, void* params, const void* color, c
         if (info.known) {
             rf.after_upscale = !info.before_upscale;
             rf.pre_exposure = info.pre_exposure > 0.0f ? info.pre_exposure : 1.0f;
+            rf.jitter_x = info.jitter_x; rf.jitter_y = info.jitter_y;
+            rf.jitter_known = info.jitter_known; rf.jittered_motion = info.jittered_motion;
+            rf.render_width = info.render_width; rf.render_height = info.render_height;
             rf.vk_exposure = (VkImage)(uintptr_t)info.vk_exposure;
             rf.vk_exposure_format = VkFormat(info.vk_exposure_format);
             rf.vk_exposure_width = info.vk_exposure_width;
@@ -1904,6 +1910,9 @@ int evaluate_vk_asi(void* cmd_buffer, Feature* f, const VkImageRef& colour, cons
         } else if (info.known) {
             rf.after_upscale = !info.before_upscale;
             rf.pre_exposure = info.pre_exposure > 0.0f ? info.pre_exposure : 1.0f;
+            rf.jitter_x = info.jitter_x; rf.jitter_y = info.jitter_y;
+            rf.jitter_known = info.jitter_known; rf.jittered_motion = info.jittered_motion;
+            rf.render_width = info.render_width; rf.render_height = info.render_height;
             rf.exposure_scale = info.exposure_scale;
             rf.vk_exposure = (VkImage)(uintptr_t)info.vk_exposure;
             rf.vk_exposure_format = VkFormat(info.vk_exposure_format);

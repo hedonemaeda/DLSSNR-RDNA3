@@ -35,6 +35,7 @@ common=(-std=c++17 -O2 -DNDEBUG -DNR_BUILD_STAMP="\"$stamp\"" -Itoolchain/Vulkan
 # HUD FIX's capture on D3D12 (nr_asi_hudcap.hpp): hooks of the game's command lists
 "$cxx" "${common[@]}" -I"$minhook/include" -c linux/src/pe/nr_asi_hudcap.cpp -o "$out/asi_hudcap.o"
 bash linux/build/build_wilsjo2.sh "$out/shaders/wilsjo2" > /dev/null
+bash linux/build/build_dittosr.sh "$out/shaders/renodx" > /dev/null
 # NR Control (End), drawn by the DLL over the game's swap chain: ImGui with its D3D11 and D3D12 backends, as the
 # Windows build (windows/build/build_optiscaler_nr.sh) - the same ImGui.
 imgui=${NR_IMGUI_ROOT:-toolchain/imgui-nr}

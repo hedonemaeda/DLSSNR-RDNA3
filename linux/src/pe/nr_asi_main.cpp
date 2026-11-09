@@ -99,7 +99,7 @@ HMODULE g_opti = nullptr;   // OptiScaler: the module that called InitializeASI
 
 // The DLSS flags (NVSDK_NGX_DLSS_Feature_Flags) this module reads.
 constexpr uint32_t kFlagIsHdr = 1u << 0, kFlagMvLowRes = 1u << 1, kFlagDepthInverted = 1u << 3,
-                   kFlagAutoExposure = 1u << 6;
+                   kFlagAutoExposure = 1u << 6, kFlagMvJittered = 1u << 2;
 constexpr int kFeatureSuperSampling = 1, kFeatureFrameGeneration = 11, kFeatureRayReconstruction = 13;
 constexpr int kEngineUnreal = 1;   // NVSDK_NGX_EngineType
 
@@ -332,6 +332,8 @@ struct Frame {
     uint32_t flags = 0;
     bool flags_known = false;
     bool reset = false;
+    float jitter_x = 0.f, jitter_y = 0.f;
+    bool jitter_known = false;
     float pre_exposure = 1.0f, exposure_scale = 1.0f, mv_x = 1.0f, mv_y = 1.0f;
 };
 
@@ -790,6 +792,9 @@ bool read_frame(const NVSDK_NGX_Parameter* p, const Tracked& t, Frame& f) {
             f.motion_rect.height = std::min<uint32_t>(f.motion_rect.height, md.Height - f.motion_rect.y);
         }
     }
+    f.jitter_known = get_float(p, "Jitter.Offset.X", &f.jitter_x) &&
+                     get_float(p, "Jitter.Offset.Y", &f.jitter_y) &&
+                     std::isfinite(f.jitter_x) && std::isfinite(f.jitter_y);
     f.reset = get_uint(p, "Reset") != 0;
     if (!get_float(p, "DLSS.Pre.Exposure", &f.pre_exposure) || !(f.pre_exposure > 1e-6f) || !std::isfinite(f.pre_exposure)) f.pre_exposure = 1.0f;
     if (!get_float(p, "DLSS.Exposure.Scale", &f.exposure_scale) || !(f.exposure_scale > 0.0f) || !std::isfinite(f.exposure_scale)) f.exposure_scale = 1.0f;
@@ -937,6 +942,9 @@ void run_renodx(ID3D12GraphicsCommandList* cmd, LayerState& ls, const Layer& lay
     route::note_pass(f.flags_known ? f.flags : 0u, f.exposure_scale, f.render_w, f.render_h, f.out_w, f.out_h);
     route::Frame rf;
     rf.before_upscale = placement == 1;
+    rf.jitter_x = f.jitter_x; rf.jitter_y = f.jitter_y;
+    rf.jitter_known = f.jitter_known && f.flags_known;
+    rf.jittered_motion = (f.flags & kFlagMvJittered) != 0;
     rf.pre_exposure = f.pre_exposure;
     rf.exposure = f.exposure;
     rf.exposure_state = uint32_t(st.exposure);
@@ -5054,6 +5062,8 @@ struct VkFrame {
     Rect depth_rect, motion_rect;
     uint32_t flags = 0;
     bool flags_known = false, reset = false;
+    float jitter_x = 0.f, jitter_y = 0.f;
+    bool jitter_known = false;
     float pre_exposure = 1.0f, exposure_scale = 1.0f, mv_x = 1.0f, mv_y = 1.0f;
     // the layouts the images are in during the call: NGX's Vulkan contract, or what DXVK says (a D3D11 game)
     VkImageLayout color_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, output_layout = VK_IMAGE_LAYOUT_GENERAL,
@@ -5331,6 +5341,9 @@ bool read_frame_dims(const NVSDK_NGX_Parameter* p, VkFrame& f, const CreateSizes
             f.motion_rect.height = std::min<uint32_t>(f.motion_rect.height, mi.Height - f.motion_rect.y);
         }
     }
+    f.jitter_known = get_float(p, "Jitter.Offset.X", &f.jitter_x) &&
+                     get_float(p, "Jitter.Offset.Y", &f.jitter_y) &&
+                     std::isfinite(f.jitter_x) && std::isfinite(f.jitter_y);
     f.reset = get_uint(p, "Reset") != 0;
     if (!get_float(p, "DLSS.Pre.Exposure", &f.pre_exposure) || !(f.pre_exposure > 1e-6f) || !std::isfinite(f.pre_exposure)) f.pre_exposure = 1.0f;
     if (!get_float(p, "DLSS.Exposure.Scale", &f.exposure_scale) || !(f.exposure_scale > 0.0f) || !std::isfinite(f.exposure_scale)) f.exposure_scale = 1.0f;
@@ -5445,6 +5458,9 @@ void run_renodx_vk(VkCommandBuffer cmd, VkLayerState& ls, const Layer& layer, in
     route::note_pass(f.flags_known ? f.flags : 0u, f.exposure_scale, f.render_w, f.render_h, f.out_w, f.out_h);
     route::Frame rf;
     rf.before_upscale = placement == 1;
+    rf.jitter_x = f.jitter_x; rf.jitter_y = f.jitter_y;
+    rf.jitter_known = f.jitter_known && f.flags_known;
+    rf.jittered_motion = (f.flags & kFlagMvJittered) != 0;
     rf.pre_exposure = f.pre_exposure;
     const bool exposure = f.exposure && f.exposure->Type == NVSDK_NGX_RESOURCE_VK_TYPE_VK_IMAGEVIEW &&
                           f.exposure->Resource.ImageViewInfo.Image;
