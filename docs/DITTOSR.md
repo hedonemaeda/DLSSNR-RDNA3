@@ -9,14 +9,14 @@ DittoSR reference: release `v0.4.0`, commit
 
 | Area | Intended behavior | Verification |
 | --- | --- | --- |
-| NR Control | Add Ditto SR to the existing Upsampling selection; persist per layer as NRLookUpsample=4 | Config and UI checks; target menu test |
-| Before SR | Resolve NR at its working extent, then run Ditto SR to the layer's 100% extent; leave OptiScaler's next SR stage and dimensions intact | CPU dimensions/contracts; Vulkan integration test; target FSR 4 chain |
-| Example | 1280x720 at 0.33 rounds to 422x238; NR -> Ditto SR -> 1280x720 -> OptiScaler SR -> 1920x1080 | Explicit dimension check |
-| Temporal inputs | Use the game's depth, motion and jitter, mapped to NR's grid; keep each layer's history separate | Shader compilation; source/CPU checks; target motion/camera-cut tests |
-| Scope | Linux/Proton NR Control, RenoDX processing, Before SR only; explain unavailable conditions | Build; target unsupported placement check |
-| Lifecycle | Reset on mode/settings changes, cuts and resize; retire GPU resources using existing completion tracking | Integration review and software Vulkan lifecycle checks |
-| Existing behavior | Keep default modes, NR network kernels, weights, RDNA4 defaults and Windows sources unchanged | Existing shader byte comparison; builds; Git diff |
-| Distribution | Ship all needed shaders and MIT/BSD notices; no NVIDIA DLL/model/weights | Package audit |
+| NR Control | Add Ditto SR to the existing Upsampling selection; persist per layer as NRLookUpsample=4 | PASS: PE compilation and generated INI; target menu trial unrun |
+| Before SR | Resolve NR at its working extent, then run Ditto SR to the layer's 100% extent; leave OptiScaler's next SR stage and dimensions intact | PASS: dimension/phase fixture and software Vulkan; target FSR 4 chain unrun |
+| Example | 1280x720 at 0.33 rounds to 422x238; NR -> Ditto SR -> 1280x720 -> OptiScaler SR -> 1920x1080 | PASS: 422x238 rounding assertion |
+| Temporal inputs | Use the game's depth, motion and jitter, mapped to NR's grid; keep each layer's history separate | PASS: compilation, phase fixture, software resets; target motion trial unrun |
+| Scope | Linux/Proton NR Control, RenoDX processing, Before SR only; explain unavailable conditions | PASS: build and explicit layer error path; target UI trial unrun |
+| Lifecycle | Reset on mode/settings changes, cuts and resize; retire GPU resources using existing completion tracking | PASS: reset, switches, subrects and 72-frame ring reuse with validation |
+| Existing behavior | Keep default modes, NR network kernels, weights, RDNA4 defaults and Windows sources unchanged | PASS: 29/29 RenoDX SPIR-V EXACT; protected source unchanged |
+| Distribution | Ship all needed shaders and MIT/BSD notices; no NVIDIA DLL/model/weights | PASS: 15-file update audit and license checks |
 
 ## Use
 
@@ -136,3 +136,18 @@ python3 linux/test/check_rdna3.py --model /path/to/CC_SILVER_AARDWOLD.bin
 python3 linux/test/check_rdna3_small.py --model /path/to/CC_SMALL_FP8.bin
 python3 linux/test/check_rdna3_int4.py --model /path/to/CC_SILVER_AARDWOLD.bin
 ```
+
+## Delivered build
+
+- Source: `30a4d3ed250a6877988f0311ea3a7ea7561a0711`, branch `feat/nr-control-dittosr`, pushed to the owner's origin.
+- Worktree: `/home/gedomada/projects/dlssnr-rdna3-dittosr`; the main checkout is unchanged.
+- Version: `0.0.8.3-74-g30a4d3e`. Full `NR_GPU=rdna3` ASI build completed with exit 0 from this clean commit.
+- Archive: `/home/gedomada/projects/dlssnr-rdna3-dittosr/artifacts/dittosr-update/NR-Control-DittoSR-0.0.8.3-74-g30a4d3e-x86_64-rdna3.tar.gz` (2,975,584 bytes), with an adjacent `.sha256` file.
+- Archive SHA-256: `0216046e3b79be3ed2320f0fe409108454546bc4c6ece1c1d0b4e69d4634dddb`.
+- ASI: 8,233,167 bytes; SHA-256 `3f55b932a023f4f823211192e5b2e08b2924fc6f2980261c573874d39e0d1cf4`.
+- Seven software Vulkan cases pass with zero API or synchronization validation errors.
+- PE inspection: AMD64, zero timestamp, InitializeASI exported, no Vulkan-loader or dynamic pthread import.
+- Package audit: 15 files, including exactly five compiled Ditto shaders and the required notices; no models or NVIDIA DLLs.
+- Repeating the normalized archive build gives identical bytes; packaged shaders match the validated SPIR-V.
+- Logs: `artifacts/build-asi-release.log`, `artifacts/dittosr-validation.log`, `artifacts/package-release.log`; metadata: `artifacts/dittosr-delivery.json`.
+- No release tag or main-branch integration was made. GPU/game qualification remains pending as described above.
